@@ -138,7 +138,13 @@ namespace GhostSystems {
             
             if (ImGui::BeginTabBar("MenuTabs")) {
                 if (ImGui::BeginTabItem("Funcoes ESP")) {
-                    ImGui::Text("Em breve: Controles do ESP");
+                    ImGui::Checkbox(OBFUSCATE("Ativar ESP"), &espEnabled);
+                    if (espEnabled) {
+                        ImGui::Checkbox(OBFUSCATE("ESP Box"), &espBox);
+                        ImGui::Checkbox(OBFUSCATE("ESP Nome"), &espName);
+                        ImGui::Checkbox(OBFUSCATE("ESP Distancia"), &espDistance);
+                        ImGui::Checkbox(OBFUSCATE("ESP Linha"), &espLine);
+                    }
                     ImGui::EndTabItem();
                 }
 
@@ -368,6 +374,8 @@ namespace GhostSystems {
         ImDrawList* drawList = ImGui::GetBackgroundDrawList();
         ImVec2 screenSize = ImGui::GetIO().DisplaySize;
 
+        if (!espEnabled) return;
+
         for (const auto& entity : localEntities) {
             // Ignora se estiver morto e o filtro de mortos estiver ativo (opcional, aqui pularemos mortos sempre pra nao poluir)
             if (!entity.isAlive()) continue;
@@ -410,26 +418,53 @@ namespace GhostSystems {
                 ImVec2 bottomRight(xFeet + boxWidth / 2.0f, yFeet);
 
                 ImU32 color = (entity.alignment == Alignment::ENEMY) ? IM_COL32(255, 0, 0, 255) : IM_COL32(0, 255, 0, 255);
-                // Desenha o retangulo (Box ESP)
-                drawList->AddRect(topLeft, bottomRight, color, 0.0f, 0, 1.5f);
                 
-                // Desenha a barra de vida ao lado (opcional, bom pra debug visual)
-                if (entity.maxHealth > 0) {
-                    float hpPct = entity.health / entity.maxHealth;
-                    if (hpPct > 1.0f) hpPct = 1.0f;
-                    if (hpPct < 0.0f) hpPct = 0.0f;
-
-                    ImVec2 hpTopLeft(topLeft.x - 6.0f, yHead + (boxHeight * (1.0f - hpPct)));
-                    ImVec2 hpBottomRight(topLeft.x - 2.0f, yFeet);
+                if (espBox) {
+                    // Desenha o retangulo (Box ESP)
+                    drawList->AddRect(topLeft, bottomRight, color, 0.0f, 0, 1.5f);
                     
-                    ImU32 hpColor = IM_COL32(0, 255, 0, 255);
-                    if (hpPct < 0.5f) hpColor = IM_COL32(255, 255, 0, 255);
-                    if (hpPct < 0.25f) hpColor = IM_COL32(255, 0, 0, 255);
+                    // Desenha a barra de vida ao lado (opcional, bom pra debug visual)
+                    if (entity.maxHealth > 0) {
+                        float hpPct = entity.health / entity.maxHealth;
+                        if (hpPct > 1.0f) hpPct = 1.0f;
+                        if (hpPct < 0.0f) hpPct = 0.0f;
 
-                    // Fundo da barra (preto)
-                    drawList->AddRectFilled(ImVec2(topLeft.x - 6.0f, yHead), ImVec2(topLeft.x - 2.0f, yFeet), IM_COL32(0, 0, 0, 150));
-                    // Barra de HP
-                    drawList->AddRectFilled(hpTopLeft, hpBottomRight, hpColor);
+                        ImVec2 hpTopLeft(topLeft.x - 6.0f, yHead + (boxHeight * (1.0f - hpPct)));
+                        ImVec2 hpBottomRight(topLeft.x - 2.0f, yFeet);
+                        
+                        ImU32 hpColor = IM_COL32(0, 255, 0, 255);
+                        if (hpPct < 0.5f) hpColor = IM_COL32(255, 255, 0, 255);
+                        if (hpPct < 0.25f) hpColor = IM_COL32(255, 0, 0, 255);
+
+                        // Fundo da barra (preto)
+                        drawList->AddRectFilled(ImVec2(topLeft.x - 6.0f, yHead), ImVec2(topLeft.x - 2.0f, yFeet), IM_COL32(0, 0, 0, 150));
+                        // Barra de HP
+                        drawList->AddRectFilled(hpTopLeft, hpBottomRight, hpColor);
+                    }
+                }
+
+                if (espLine) {
+                    // Linha do topo da tela ate o jogador (DrawLine)
+                    drawList->AddLine(ImVec2(screenSize.x / 2.0f, 0.0f), ImVec2(xHead, yHead), color, 1.0f);
+                }
+
+                if (espName || espDistance) {
+                    char textBuffer[128];
+                    if (espName && espDistance) {
+                        snprintf(textBuffer, sizeof(textBuffer), "%s [%.0fm]", entity.name, entity.distanceToLocal);
+                    } else if (espName) {
+                        snprintf(textBuffer, sizeof(textBuffer), "%s", entity.name);
+                    } else {
+                        snprintf(textBuffer, sizeof(textBuffer), "[%.0fm]", entity.distanceToLocal);
+                    }
+
+                    ImVec2 textSize = ImGui::CalcTextSize(textBuffer);
+                    ImVec2 textPos(xHead - textSize.x / 2.0f, yHead - textSize.y - 2.0f);
+                    
+                    // Contorno do texto
+                    drawList->AddText(ImVec2(textPos.x + 1, textPos.y + 1), IM_COL32(0, 0, 0, 255), textBuffer);
+                    drawList->AddText(ImVec2(textPos.x - 1, textPos.y - 1), IM_COL32(0, 0, 0, 255), textBuffer);
+                    drawList->AddText(textPos, IM_COL32(255, 255, 255, 255), textBuffer);
                 }
             }
         }

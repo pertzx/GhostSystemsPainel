@@ -37,6 +37,13 @@ namespace GhostSystems {
         float maxDistanceFilter = 1000.0f;
         int filterTeamId = -1; // -1 significa sem filtro
 
+        // Configurações de ESP
+        bool espEnabled = true;
+        bool espBox = true;
+        bool espName = true;
+        bool espDistance = true;
+        bool espLine = true;
+
         // Filtros Debug Player
         struct PotentialValue {
             std::string path;

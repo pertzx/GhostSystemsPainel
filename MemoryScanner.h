@@ -163,11 +163,36 @@ namespace GhostSystems {
                                         p.distanceToLocal = 100.0f;
                                         p.alignment = Alignment::ENEMY;
 
-                                        // Extrair Nome - Ler string .NET / Il2Cpp corretamente
-                                        void* getNickNameMethod = Il2Cpp::GetMethodRecursively(entityKlass, "GetNickName", 0);
-                                        if (!getNickNameMethod) getNickNameMethod = Il2Cpp::GetMethodRecursively(entityKlass, "get_NickName", 0);
-                                        if (!getNickNameMethod) getNickNameMethod = Il2Cpp::GetMethodRecursively(entityKlass, "get_Nickname", 0); // Outra variavel
-                                        if (!getNickNameMethod) getNickNameMethod = Il2Cpp::GetMethodRecursively(entityKlass, "get_Name", 0);
+                                        static void* getNickNameMethod = nullptr;
+                                        static void* isAIMethod = nullptr;
+                                        static void* getPosMethod = nullptr;
+                                        static void* getTeamMethod = nullptr;
+                                        static void* getIsDeadMethod = nullptr;
+                                        static void* isLocalMethod = nullptr;
+                                        static bool methodsCached = false;
+
+                                        if (!methodsCached) {
+                                            getNickNameMethod = Il2Cpp::GetMethodRecursively(entityKlass, "GetNickName", 0);
+                                            if (!getNickNameMethod) getNickNameMethod = Il2Cpp::GetMethodRecursively(entityKlass, "get_NickName", 0);
+                                            if (!getNickNameMethod) getNickNameMethod = Il2Cpp::GetMethodRecursively(entityKlass, "get_Nickname", 0);
+                                            if (!getNickNameMethod) getNickNameMethod = Il2Cpp::GetMethodRecursively(entityKlass, "get_Name", 0);
+
+                                            isAIMethod = Il2Cpp::GetMethodRecursively(entityKlass, "get_IsAI", 0);
+                                            if (!isAIMethod) isAIMethod = Il2Cpp::GetMethodRecursively(entityKlass, "IsAI", 0);
+                                            if (!isAIMethod) isAIMethod = Il2Cpp::GetMethodRecursively(entityKlass, "get_isBot", 0);
+
+                                            getPosMethod = Il2Cpp::GetMethodRecursively(entityKlass, "get_Position", 0);
+                                            getTeamMethod = Il2Cpp::GetMethodRecursively(entityKlass, "get_TeamID", 0);
+                                            getIsDeadMethod = Il2Cpp::GetMethodRecursively(entityKlass, "get_IsDead", 0);
+
+                                            isLocalMethod = Il2Cpp::GetMethodRecursively(entityKlass, "IsLocalPlayer", 0);
+                                            if (!isLocalMethod) isLocalMethod = Il2Cpp::GetMethodRecursively(entityKlass, "IsLocalEntity", 0);
+                                            if (!isLocalMethod) isLocalMethod = Il2Cpp::GetMethodRecursively(entityKlass, "get_IsLocal", 0);
+                                            if (!isLocalMethod) isLocalMethod = Il2Cpp::GetMethodRecursively(entityKlass, "get_IsLocalPlayer", 0);
+                                            if (!isLocalMethod) isLocalMethod = Il2Cpp::GetMethodRecursively(entityKlass, "IsLocalAvatar", 0);
+
+                                            methodsCached = true;
+                                        }
 
                                         if (getNickNameMethod) {
                                             void* nameObj = Il2Cpp::runtime_invoke(getNickNameMethod, entityObj, nullptr, nullptr);
@@ -200,10 +225,6 @@ namespace GhostSystems {
                                         }
 
                                         // IsAI (Bot) ou fallbacks
-                                        void* isAIMethod = Il2Cpp::GetMethodRecursively(entityKlass, "get_IsAI", 0); // Geralmente é um getter de propriedade
-                                        if (!isAIMethod) isAIMethod = Il2Cpp::GetMethodRecursively(entityKlass, "IsAI", 0);
-                                        if (!isAIMethod) isAIMethod = Il2Cpp::GetMethodRecursively(entityKlass, "get_isBot", 0);
-                                        
                                         if (isAIMethod) {
                                             void* aiObj = Il2Cpp::runtime_invoke(isAIMethod, entityObj, nullptr, nullptr);
                                             if (aiObj) p.isBot = *(bool*)((uintptr_t)aiObj + 0x10);
@@ -351,7 +372,6 @@ namespace GhostSystems {
                                         }
 
                                         // Obter a posição (usando o getter ou offsets direto se possivel para nao lagar)
-                                        void* getPosMethod = Il2Cpp::GetMethodRecursively(entityKlass, "get_Position", 0);
                                         if (getPosMethod) {
                                             void* posObj = Il2Cpp::runtime_invoke(getPosMethod, entityObj, nullptr, nullptr);
                                             if (posObj) {
@@ -363,7 +383,6 @@ namespace GhostSystems {
                                             // Fallback offset posição, se existir. Vamos deixar vazio por enquanto.
                                         }
 
-                                        void* getTeamMethod = Il2Cpp::GetMethodRecursively(entityKlass, "get_TeamID", 0);
                                         if (getTeamMethod) {
                                             void* teamObj = Il2Cpp::runtime_invoke(getTeamMethod, entityObj, nullptr, nullptr);
                                             if (teamObj) {
@@ -374,7 +393,6 @@ namespace GhostSystems {
                                             }
                                         }
 
-                                        void* getIsDeadMethod = Il2Cpp::GetMethodRecursively(entityKlass, "get_IsDead", 0);
                                         if (getIsDeadMethod) {
                                             void* deadObj = Il2Cpp::runtime_invoke(getIsDeadMethod, entityObj, nullptr, nullptr);
                                             if (deadObj) p.isKnocked = *(bool*)((uintptr_t)deadObj + 0x10);
@@ -382,12 +400,6 @@ namespace GhostSystems {
 
                                         // Verificar IsLocalPlayer para ignorar ou destacar o jogador local
                                         bool isLocal = false;
-                                        void* isLocalMethod = Il2Cpp::GetMethodRecursively(entityKlass, "IsLocalPlayer", 0);
-                                        if (!isLocalMethod) isLocalMethod = Il2Cpp::GetMethodRecursively(entityKlass, "IsLocalEntity", 0);
-                                        if (!isLocalMethod) isLocalMethod = Il2Cpp::GetMethodRecursively(entityKlass, "get_IsLocal", 0);
-                                        if (!isLocalMethod) isLocalMethod = Il2Cpp::GetMethodRecursively(entityKlass, "get_IsLocalPlayer", 0);
-                                        if (!isLocalMethod) isLocalMethod = Il2Cpp::GetMethodRecursively(entityKlass, "IsLocalAvatar", 0);
-                                        
                                         if (isLocalMethod) {
                                             void* isLocalObj = Il2Cpp::runtime_invoke(isLocalMethod, entityObj, nullptr, nullptr);
                                             if (isLocalObj) {
@@ -437,7 +449,7 @@ namespace GhostSystems {
                 }
 
                 // Aumentamos o tempo de sleep para desafogar a thread do Android (isso previne o travamento do ImGui / Touch)
-                std::this_thread::sleep_for(std::chrono::milliseconds(500)); // Era um distrib(gen), fixado em 500ms para scan loop não pesar
+                std::this_thread::sleep_for(std::chrono::milliseconds(100)); // Fixado em 100ms para scan loop não pesar mas ser mais fluido
             }
         }
     };
