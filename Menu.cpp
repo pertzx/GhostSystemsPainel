@@ -871,6 +871,50 @@ namespace GhostSystems {
             drawList->AddLine(screenCenter, bestTargetPos, IM_COL32(255, 0, 0, 255), 2.0f);
             drawList->AddCircle(bestTargetPos, 5.0f, IM_COL32(255, 0, 0, 255), 12, 2.0f);
 
+            // Lógica da Mira Magnética (Independente de atirar ou delay)
+            if (aimbotMagnetic && getTransformMethod && getPosMethod && getRotMethod) {
+                void* cameraTransform = Il2Cpp::runtime_invoke(getTransformMethod, mainCamera, nullptr, &exc);
+                if (cameraTransform && !exc) {
+                    void* targetTransform = Il2Cpp::runtime_invoke(getTransformMethod, bestTargetObj, nullptr, &exc);
+                    if (targetTransform && !exc) {
+                        void* getForwardMethod = Il2Cpp::GetMethodRecursively(transformKlass, "get_forward", 0);
+                        if (getForwardMethod) {
+                            void* forwardObj = Il2Cpp::runtime_invoke(getForwardMethod, cameraTransform, nullptr, &exc);
+                            void* camPosObj = Il2Cpp::runtime_invoke(getPosMethod, cameraTransform, nullptr, &exc);
+                            if (forwardObj && camPosObj && !exc) {
+                                Vector3Args forward = *(Vector3Args*)((uintptr_t)forwardObj + 0x10);
+                                Vector3Args camPos = *(Vector3Args*)((uintptr_t)camPosObj + 0x10);
+                                
+                                // Usa estritamente a distância 3D original que o alvo estava do jogador
+                                float magDist = aimbotTargetDist3D;
+                                if (magDist < 1.0f) magDist = 1.0f; // Evita puxar para dentro da câmera
+                                
+                                // A posição magnética será: Câmera + (Forward * Distância Original)
+                                Vector3Args magneticPos = {
+                                    camPos.x + forward.x * magDist,
+                                    camPos.y + forward.y * magDist,
+                                    camPos.z + forward.z * magDist
+                                };
+                                
+                                // Descida suave para a cabeça colar na mira
+                                float heightDiff = bestTargetWorldPosHead.y - bestTargetWorldPosChest.y;
+                                magneticPos.y -= (heightDiff * 4.5f); 
+
+                                void* setPosMethod = Il2Cpp::GetMethodRecursively(transformKlass, "set_position", 1);
+                                if (setPosMethod) {
+                                    void* argsSetPos[1] = { &magneticPos };
+                                    Il2Cpp::runtime_invoke(setPosMethod, targetTransform, argsSetPos, &exc);
+                                    if (!exc) {
+                                        aimbotErrorLog = "Inimigo puxado pela Mira Magnetica (Sempre Ativo)!";
+                                        return; // Sai da função de render para pular a lógica normal de girar a câmera
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
             bool shouldAim = true;
             if (aimbotMode == 0) { // Tradicional (Ao Atirar)
                 shouldAim = false;
@@ -946,50 +990,6 @@ namespace GhostSystems {
 
                         // Vetor direcional para o alvo (Cabeca ou Peito dependendo do t)
                         Vector3Args dir = { currentTargetPos.x - camPos.x, currentTargetPos.y - camPos.y, currentTargetPos.z - camPos.z };
-                        
-                        // Lógica da Mira Magnética (Teleporta o inimigo para frente da mira do jogador)
-                        if (aimbotMagnetic) {
-                            void* targetTransform = Il2Cpp::runtime_invoke(getTransformMethod, bestTargetObj, nullptr, &exc);
-                            if (targetTransform && !exc) {
-                                // Pega a rotação atual da câmera
-                                void* currentCamRotObj = Il2Cpp::runtime_invoke(getRotMethod, cameraTransform, nullptr, &exc);
-                                if (currentCamRotObj && !exc) {
-                                    // Calcula um vetor "Forward" (Frente) baseado na rotação da câmera
-                                    // Um truque no Unity é multiplicar Quaternion * Vector3.forward(0,0,1)
-                                    // Como não temos esse método no cache, vamos apenas usar o transform.forward
-                                    void* getForwardMethod = Il2Cpp::GetMethodRecursively(transformKlass, "get_forward", 0);
-                                    if (getForwardMethod) {
-                                        void* forwardObj = Il2Cpp::runtime_invoke(getForwardMethod, cameraTransform, nullptr, &exc);
-                                        if (forwardObj && !exc) {
-                                            Vector3Args forward = *(Vector3Args*)((uintptr_t)forwardObj + 0x10);
-                                            
-                                            // Define a distância magnética (mantém a distância original ou um valor fixo, ex: 10m)
-                                            float magDist = aimbotTargetDist3D > 2.0f ? aimbotTargetDist3D : 10.0f;
-                                            
-                                            Vector3Args magneticPos = {
-                                                camPos.x + forward.x * magDist,
-                                                camPos.y + forward.y * magDist,
-                                                camPos.z + forward.z * magDist
-                                            };
-                                            
-                                            // Subtrai a altura da cabeça para alinhar os pés corretamente
-                                            float heightDiff = bestTargetWorldPosHead.y - bestTargetWorldPosChest.y;
-                                            magneticPos.y -= (heightDiff * 5.0f); // Estimativa do chão
-
-                                            void* setPosMethod = Il2Cpp::GetMethodRecursively(transformKlass, "set_position", 1);
-                                            if (setPosMethod) {
-                                                void* argsSetPos[1] = { &magneticPos };
-                                                Il2Cpp::runtime_invoke(setPosMethod, targetTransform, argsSetPos, &exc);
-                                                if (!exc) {
-                                                    aimbotErrorLog = "Inimigo puxado pela Mira Magnetica!";
-                                                    return; // Sai da função de render para pular a lógica normal de girar a câmera
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
 
                         // LookRotation
                         void* argsRot[1] = { &dir };
