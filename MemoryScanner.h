@@ -68,6 +68,10 @@ namespace GhostSystems {
                 return;
             }
             void* currentMatchGameField = Il2Cpp::class_get_field_from_name(gameFacadeClass, "CurrentMatchGame");
+            
+            // Cache de BaseGame para fallback
+            void* baseGameClass = Il2Cpp::GetClass("Assembly-CSharp.dll", "GCommon", "BaseGame");
+            void* sAllEntitiesField = baseGameClass ? Il2Cpp::class_get_field_from_name(baseGameClass, "sAllEntities") : nullptr;
 
             while (isRunning) {
                 std::vector<PlayerEntity> updatedEntities;
@@ -85,12 +89,8 @@ namespace GhostSystems {
 
                 if (!matchGame) {
                     if (logger.is_open()) logger << "[SCAN] matchGame is null, trying BaseGame.sAllEntities..." << std::endl;
-                    void* baseGameClass = Il2Cpp::GetClass("Assembly-CSharp.dll", "GCommon", "BaseGame");
-                    if (baseGameClass) {
-                        void* sAllEntitiesField = Il2Cpp::class_get_field_from_name(baseGameClass, "sAllEntities");
-                        if (sAllEntitiesField) {
-                            Il2Cpp::field_static_get_value(sAllEntitiesField, &dictionaryObj);
-                        }
+                    if (sAllEntitiesField) {
+                        Il2Cpp::field_static_get_value(sAllEntitiesField, &dictionaryObj);
                     }
                 } else {
                     if (logger.is_open()) logger << "[SCAN] matchGame found." << std::endl;

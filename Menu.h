@@ -31,6 +31,9 @@ namespace GhostSystems {
         // Flag de produção vs desenvolvimento
         bool isDebugMode = true; // Mude para false para esconder as abas de debug
 
+        // Master Switch
+        bool masterSwitch = false;
+
         // Filtros da UI
         bool filterAliveOnly = true;
         bool filterHumansOnly = false;
@@ -54,8 +57,10 @@ namespace GhostSystems {
         bool aimbotTargetAllies = true;
         float aimbotFov = 200.0f;
         int aimbotTimeMs = 100; // Tempo em milissegundos para puxar a mira
-        float aimbotTransitionTimeMs = 500.0f; // Tempo para transição para a cabeça
+        float aimbotTransitionTimeMs = 50.0f; // Tempo para transição para a cabeça (Rage < 50, Safe > 50)
         float aimbotTransitionCurve = 2.0f; // Curva de aceleração
+        bool aimbotVisibilityCheck = false; // Só puxa se o player estiver visível (DESATIVADO TEMPORARIAMENTE)
+        bool aimbotMagnetic = false; // Mira Magnética (Puxa o inimigo pra frente da mira)
         std::unordered_map<void*, float> aimbotTargetTimeMap; // Guarda o tempo de foco por entidade
 
         // Variaveis de Debug Aimbot

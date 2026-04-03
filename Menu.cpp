@@ -136,7 +136,11 @@ namespace GhostSystems {
                 ImGui::SetWindowPos(ImVec2(pos.x + delta.x, pos.y + delta.y));
             }
             
-            if (ImGui::BeginTabBar("MenuTabs")) {
+            ImGui::Checkbox(OBFUSCATE("Ativar Painel"), &masterSwitch);
+            ImGui::Separator();
+            
+            if (masterSwitch) {
+                if (ImGui::BeginTabBar("MenuTabs")) {
                 if (ImGui::BeginTabItem("Aimbot")) {
                     ImGui::Checkbox(OBFUSCATE("Ativar Aimbot"), &aimbotEnabled);
                     if (aimbotEnabled) {
@@ -144,19 +148,26 @@ namespace GhostSystems {
                 ImGui::Combo("Modo", &aimbotMode, aimbotModes, IM_ARRAYSIZE(aimbotModes));
                 ImGui::Checkbox(OBFUSCATE("Mostrar FOV"), &aimbotDrawFov);
                 ImGui::Checkbox(OBFUSCATE("Mirar em Aliados"), &aimbotTargetAllies);
+                ImGui::Checkbox(OBFUSCATE("Ignorar Invisiveis (Atras da Parede)"), &aimbotVisibilityCheck);
+                ImGui::Checkbox(OBFUSCATE("Mira Magnetica (Puxa inimigo)"), &aimbotMagnetic);
                 ImGui::SliderFloat(OBFUSCATE("Raio do FOV"), &aimbotFov, 10.0f, 500.0f, "%.0f px");
                 ImGui::SliderInt(OBFUSCATE("Atraso/Delay (ms)"), &aimbotTimeMs, 0, 300, "%d ms");
                 
                 if (aimbotTimeMs < 50) {
-                    ImGui::TextColored(ImVec4(1.0f, 0.0f, 0.0f, 1.0f), "Rage Aim (Sem Atraso)");
+                    ImGui::TextColored(ImVec4(1.0f, 0.0f, 0.0f, 1.0f), "Rage Aim (Força Máxima)");
                 } else {
-                    ImGui::TextColored(ImVec4(0.0f, 1.0f, 0.0f, 1.0f), "Safe Aim (Com Atraso)");
+                    ImGui::TextColored(ImVec4(0.0f, 1.0f, 0.0f, 1.0f), "Safe Aim (Suave)");
                 }
                 
                 ImGui::Separator();
                 ImGui::TextColored(ImVec4(1.0f, 1.0f, 0.0f, 1.0f), "Configurações de Transição (Peito -> Cabeça)");
-                ImGui::SliderFloat(OBFUSCATE("Tempo p/ Cabeça (ms)"), &aimbotTransitionTimeMs, 100.0f, 2000.0f, "%.0f ms");
-                ImGui::SliderFloat(OBFUSCATE("Força/Curva"), &aimbotTransitionCurve, 1.0f, 5.0f, "%.1f");
+                ImGui::SliderFloat(OBFUSCATE("Tempo p/ Cabeça (ms)"), &aimbotTransitionTimeMs, 0.0f, 2000.0f, "%.0f ms");
+                if (aimbotTransitionTimeMs < 50.0f) {
+                    ImGui::TextColored(ImVec4(1.0f, 0.0f, 0.0f, 1.0f), "Transição: RAGE (Instantâneo)");
+                } else {
+                    ImGui::TextColored(ImVec4(0.0f, 1.0f, 0.0f, 1.0f), "Transição: SAFE (Suave)");
+                }
+                ImGui::SliderFloat(OBFUSCATE("Força/Curva"), &aimbotTransitionCurve, 1.0f, 10.0f, "%.1f");
                 
                 ImGui::TextColored(ImVec4(0.5f, 0.5f, 0.5f, 1.0f), "A mira foca no inimigo mais proximo do centro (FOV).");
             }
@@ -221,14 +232,15 @@ namespace GhostSystems {
 
                         ImGui::EndTabItem();
                     }
-                }
+                } // isDebugMode
                 ImGui::EndTabBar();
-            }
-        }
+            } // BeginTabBar
+        } // masterSwitch
+        } // Fim if (ImGui::Begin(...))
         ImGui::End();
         
         ImGui::PopStyleVar(); // Pop da estilizacao
-    }
+    } // Fim Menu::render()
 
     void Menu::scanForPotentialValues(void* obj, void* klass, const std::string& path, int depth, std::unordered_set<void*>& visited) {
         if (!obj || !klass || depth > 1) return;
@@ -405,13 +417,18 @@ namespace GhostSystems {
     }
 
     void Menu::drawESP() {
+        if (!masterSwitch) return; // Se o painel esta desativado, nao fazemos nada
+
         std::vector<PlayerEntity> localEntities;
         {
             std::lock_guard<std::mutex> lock(sharedState.mtx);
             localEntities = sharedState.entities;
         }
 
-        if (localEntities.empty()) return;
+        if (localEntities.empty()) {
+            masterSwitch = false; // Desativa tudo caso nao haja entidades (Lobby)
+            return;
+        }
 
         static void* get_mainMethod = nullptr;
         static void* worldToScreenMethod = nullptr;
@@ -434,6 +451,7 @@ namespace GhostSystems {
         static void* getLeftToeTFMethod = nullptr;
         static void* getRightToeTFMethod = nullptr;
         static void* getComponentMethod = nullptr;
+        static void* isVisibleMethod = nullptr;
         static void* animatorTypeObject = nullptr;
         static void* getBoneTransformMethod = nullptr;
         static void* getBoneByNameMethod = nullptr;
@@ -562,6 +580,7 @@ namespace GhostSystems {
                 getRightAnkleTFMethod = Il2Cpp::GetMethodRecursively(playerKlass, "GetRightAnkleTF", 0);
                 getLeftToeTFMethod = Il2Cpp::GetMethodRecursively(playerKlass, "GetLeftToeTF", 0);
                 getRightToeTFMethod = Il2Cpp::GetMethodRecursively(playerKlass, "GetRightToeTF", 0);
+                isVisibleMethod = Il2Cpp::GetMethodRecursively(playerKlass, "IsVisible", 0);
                 getComponentMethod = Il2Cpp::GetMethodRecursively(componentKlass, "GetComponentInChildren", 1); // GetInChildren is safer for Animator
                 getBoneByNameMethod = Il2Cpp::GetMethodRecursively(playerKlass, "GetBoneByName", 1);
             }
@@ -650,38 +669,49 @@ namespace GhostSystems {
 
                 // Lógica de FOV (Aimbot) - Checa a distancia para o centro da tela
                 if (aimbotEnabled) {
-                    float distToCenter = sqrt(pow(xHead - screenCenter.x, 2) + pow(yHead - screenCenter.y, 2));
-                    if (distToCenter <= aimbotFov && distToCenter < closestAimbotDist) {
-                        closestAimbotDist = distToCenter;
-                        bestTargetPos = ImVec2(xHead, yHead);
-                        bestTargetWorldPosHead = posHead;
-                        
-                        // Estimar peito
-                        float height = posHead.y - posFeet.y;
-                        bestTargetWorldPosChest = { posHead.x, posHead.y - (height * 0.2f), posHead.z };
+                    bool visible = true;
+                    if (aimbotVisibilityCheck && isVisibleMethod && entity.obj) {
+                        void* exc = nullptr;
+                        void* isVisObj = Il2Cpp::runtime_invoke(isVisibleMethod, entity.obj, nullptr, &exc);
+                        if (isVisObj && !exc) {
+                            visible = *(bool*)((uintptr_t)isVisObj + 0x10);
+                        }
+                    }
 
-                        // Tentar obter do esqueleto (Spine = 7, Neck = 9)
-                        CachedAnimatorInfo* info = &cachedAnimators[entity.obj];
-                        if (!info->hasAttempted && animatorTypeObject) {
-                            void* exc = nullptr;
-                            void* args[1] = { animatorTypeObject };
-                            void* animObj = Il2Cpp::runtime_invoke(getComponentMethod, entity.obj, args, &exc);
-                            info->animatorObj = (!exc) ? animObj : nullptr;
-                            info->hasAttempted = true;
+                    if (visible) {
+                        float distToCenter = sqrt(pow(xHead - screenCenter.x, 2) + pow(yHead - screenCenter.y, 2));
+                        if (distToCenter <= aimbotFov && distToCenter < closestAimbotDist) {
+                            closestAimbotDist = distToCenter;
+                            bestTargetPos = ImVec2(xHead, yHead);
+                            bestTargetWorldPosHead = posHead;
+                            
+                            // Estimar peito
+                            float height = posHead.y - posFeet.y;
+                            bestTargetWorldPosChest = { posHead.x, posHead.y - (height * 0.2f), posHead.z };
+
+                            // Tentar obter do esqueleto (Spine = 7, Neck = 9)
+                            CachedAnimatorInfo* info = &cachedAnimators[entity.obj];
+                            if (!info->hasAttempted && animatorTypeObject) {
+                                void* exc = nullptr;
+                                void* args[1] = { animatorTypeObject };
+                                void* animObj = Il2Cpp::runtime_invoke(getComponentMethod, entity.obj, args, &exc);
+                                info->animatorObj = (!exc) ? animObj : nullptr;
+                                info->hasAttempted = true;
+                            }
+                            if (info->animatorObj) {
+                                bool successSpine = false;
+                                Vector3Args spinePos = getBonePosCached(info, 7, successSpine);
+                                if (successSpine) bestTargetWorldPosChest = spinePos;
+                            }
+                            
+                            foundAimbotTarget = true;
+                            bestTargetObj = entity.obj;
+                            
+                            // Guarda informacoes de Debug
+                            aimbotTargetName = entity.name;
+                            aimbotTargetDistFOV = distToCenter;
+                            aimbotTargetDist3D = entity.distanceToLocal;
                         }
-                        if (info->animatorObj) {
-                            bool successSpine = false;
-                            Vector3Args spinePos = getBonePosCached(info, 7, successSpine);
-                            if (successSpine) bestTargetWorldPosChest = spinePos;
-                        }
-                        
-                        foundAimbotTarget = true;
-                        bestTargetObj = entity.obj;
-                        
-                        // Guarda informacoes de Debug
-                        aimbotTargetName = entity.name;
-                        aimbotTargetDistFOV = distToCenter;
-                        aimbotTargetDist3D = entity.distanceToLocal;
                     }
                 }
                 
@@ -917,6 +947,50 @@ namespace GhostSystems {
                         // Vetor direcional para o alvo (Cabeca ou Peito dependendo do t)
                         Vector3Args dir = { currentTargetPos.x - camPos.x, currentTargetPos.y - camPos.y, currentTargetPos.z - camPos.z };
                         
+                        // Lógica da Mira Magnética (Teleporta o inimigo para frente da mira do jogador)
+                        if (aimbotMagnetic) {
+                            void* targetTransform = Il2Cpp::runtime_invoke(getTransformMethod, bestTargetObj, nullptr, &exc);
+                            if (targetTransform && !exc) {
+                                // Pega a rotação atual da câmera
+                                void* currentCamRotObj = Il2Cpp::runtime_invoke(getRotMethod, cameraTransform, nullptr, &exc);
+                                if (currentCamRotObj && !exc) {
+                                    // Calcula um vetor "Forward" (Frente) baseado na rotação da câmera
+                                    // Um truque no Unity é multiplicar Quaternion * Vector3.forward(0,0,1)
+                                    // Como não temos esse método no cache, vamos apenas usar o transform.forward
+                                    void* getForwardMethod = Il2Cpp::GetMethodRecursively(transformKlass, "get_forward", 0);
+                                    if (getForwardMethod) {
+                                        void* forwardObj = Il2Cpp::runtime_invoke(getForwardMethod, cameraTransform, nullptr, &exc);
+                                        if (forwardObj && !exc) {
+                                            Vector3Args forward = *(Vector3Args*)((uintptr_t)forwardObj + 0x10);
+                                            
+                                            // Define a distância magnética (mantém a distância original ou um valor fixo, ex: 10m)
+                                            float magDist = aimbotTargetDist3D > 2.0f ? aimbotTargetDist3D : 10.0f;
+                                            
+                                            Vector3Args magneticPos = {
+                                                camPos.x + forward.x * magDist,
+                                                camPos.y + forward.y * magDist,
+                                                camPos.z + forward.z * magDist
+                                            };
+                                            
+                                            // Subtrai a altura da cabeça para alinhar os pés corretamente
+                                            float heightDiff = bestTargetWorldPosHead.y - bestTargetWorldPosChest.y;
+                                            magneticPos.y -= (heightDiff * 5.0f); // Estimativa do chão
+
+                                            void* setPosMethod = Il2Cpp::GetMethodRecursively(transformKlass, "set_position", 1);
+                                            if (setPosMethod) {
+                                                void* argsSetPos[1] = { &magneticPos };
+                                                Il2Cpp::runtime_invoke(setPosMethod, targetTransform, argsSetPos, &exc);
+                                                if (!exc) {
+                                                    aimbotErrorLog = "Inimigo puxado pela Mira Magnetica!";
+                                                    return; // Sai da função de render para pular a lógica normal de girar a câmera
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
                         // LookRotation
                         void* argsRot[1] = { &dir };
                         void* targetRotObj = Il2Cpp::runtime_invoke(lookRotMethod, nullptr, argsRot, &exc);
