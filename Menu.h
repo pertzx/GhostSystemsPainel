@@ -44,6 +44,24 @@ namespace GhostSystems {
         bool espDistance = true;
         bool espLine = true;
 
+        // Configurações de Aimbot
+        bool aimbotEnabled = true;
+        bool aimbotDrawFov = true;
+        bool aimbotTargetAllies = true;
+        float aimbotFov = 200.0f;
+        float aimbotSmooth = 5.0f;
+
+        // Variaveis de Debug Aimbot
+        bool aimbotHasTarget = false;
+        std::string aimbotTargetName = "Nenhum";
+        float aimbotTargetDistFOV = 0.0f;
+        float aimbotTargetDist3D = 0.0f;
+        float aimbotCamPosX = 0.0f, aimbotCamPosY = 0.0f, aimbotCamPosZ = 0.0f;
+        float aimbotCamRotX = 0.0f, aimbotCamRotY = 0.0f, aimbotCamRotZ = 0.0f, aimbotCamRotW = 0.0f;
+        float aimbotTargetRotX = 0.0f, aimbotTargetRotY = 0.0f, aimbotTargetRotZ = 0.0f, aimbotTargetRotW = 0.0f;
+        float aimbotNewRotX = 0.0f, aimbotNewRotY = 0.0f, aimbotNewRotZ = 0.0f, aimbotNewRotW = 0.0f;
+        std::string aimbotErrorLog = "Nenhum erro";
+
         // Filtros Debug Player
         struct PotentialValue {
             std::string path;

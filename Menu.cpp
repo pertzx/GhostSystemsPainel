@@ -137,6 +137,18 @@ namespace GhostSystems {
             }
             
             if (ImGui::BeginTabBar("MenuTabs")) {
+                if (ImGui::BeginTabItem("Aimbot")) {
+                    ImGui::Checkbox(OBFUSCATE("Ativar Aimbot"), &aimbotEnabled);
+                    if (aimbotEnabled) {
+                        ImGui::Checkbox(OBFUSCATE("Mostrar FOV"), &aimbotDrawFov);
+                        ImGui::Checkbox(OBFUSCATE("Mirar em Aliados"), &aimbotTargetAllies);
+                        ImGui::SliderFloat(OBFUSCATE("Raio do FOV"), &aimbotFov, 10.0f, 500.0f, "%.0f px");
+                        ImGui::SliderFloat(OBFUSCATE("Suavidade (Smooth)"), &aimbotSmooth, 1.0f, 20.0f, "%.1f");
+                        ImGui::TextColored(ImVec4(0.5f, 0.5f, 0.5f, 1.0f), "A mira foca no inimigo mais proximo do centro (FOV).");
+                    }
+                    ImGui::EndTabItem();
+                }
+
                 if (ImGui::BeginTabItem("Funcoes ESP")) {
                     ImGui::Checkbox(OBFUSCATE("Ativar ESP"), &espEnabled);
                     if (espEnabled) {
@@ -158,6 +170,35 @@ namespace GhostSystems {
                     }
                     if (ImGui::BeginTabItem("Debug Player")) {
                         drawDebugPlayer();
+                        ImGui::EndTabItem();
+                    }
+                    if (ImGui::BeginTabItem("Debug Aimbot")) {
+                        ImGui::TextColored(ImVec4(1, 0, 0, 1), "STATUS: %s", aimbotHasTarget ? "ALVO TRAVADO" : "BUSCANDO...");
+                        ImGui::Separator();
+                        ImGui::Text("Alvo Atual: %s", aimbotTargetName.c_str());
+                        ImGui::Text("Distancia FOV (px): %.2f", aimbotTargetDistFOV);
+                        ImGui::Text("Distancia 3D (m): %.2f", aimbotTargetDist3D);
+                        
+                        ImGui::Separator();
+                        ImGui::TextColored(ImVec4(0, 1, 0, 1), "Posicao da Camera (World):");
+                        ImGui::Text("X: %.2f | Y: %.2f | Z: %.2f", aimbotCamPosX, aimbotCamPosY, aimbotCamPosZ);
+                        
+                        ImGui::Separator();
+                        ImGui::TextColored(ImVec4(0, 1, 0, 1), "Rotacao da Camera Atual (Quaternion):");
+                        ImGui::Text("X: %.2f | Y: %.2f | Z: %.2f | W: %.2f", aimbotCamRotX, aimbotCamRotY, aimbotCamRotZ, aimbotCamRotW);
+
+                        ImGui::Separator();
+                        ImGui::TextColored(ImVec4(1, 1, 0, 1), "Rotacao do Alvo (LookRotation):");
+                        ImGui::Text("X: %.2f | Y: %.2f | Z: %.2f | W: %.2f", aimbotTargetRotX, aimbotTargetRotY, aimbotTargetRotZ, aimbotTargetRotW);
+
+                        ImGui::Separator();
+                        ImGui::TextColored(ImVec4(0, 1, 1, 1), "Nova Rotacao Calculada (Slerp):");
+                        ImGui::Text("X: %.2f | Y: %.2f | Z: %.2f | W: %.2f", aimbotNewRotX, aimbotNewRotY, aimbotNewRotZ, aimbotNewRotW);
+                        
+                        ImGui::Separator();
+                        ImGui::TextColored(ImVec4(1, 0.5f, 0, 1), "Logs / Erros (Aimbot Engine):");
+                        ImGui::TextWrapped("%s", aimbotErrorLog.c_str());
+
                         ImGui::EndTabItem();
                     }
                 }
@@ -354,6 +395,18 @@ namespace GhostSystems {
 
         static void* get_mainMethod = nullptr;
         static void* worldToScreenMethod = nullptr;
+        
+        static void* componentKlass = nullptr;
+        static void* getTransformMethod = nullptr;
+        static void* transformKlass = nullptr;
+        static void* getPosMethod = nullptr;
+        static void* getRotMethod = nullptr;
+        static void* setRotMethod = nullptr;
+        static void* quatKlass = nullptr;
+        static void* lookRotMethod = nullptr;
+        static void* slerpMethod = nullptr;
+        static void* setAimRotationMethod = nullptr;
+
         static bool methodsSearched = false;
 
         if (!methodsSearched) {
@@ -362,7 +415,34 @@ namespace GhostSystems {
                 get_mainMethod = Il2Cpp::GetMethodRecursively(cameraKlass, "get_main", 0);
                 worldToScreenMethod = Il2Cpp::GetMethodRecursively(cameraKlass, "WorldToScreenPoint", 1);
             }
+            
+            componentKlass = Il2Cpp::GetClass("UnityEngine.CoreModule.dll", "UnityEngine", "Component");
+            if (componentKlass) {
+                getTransformMethod = Il2Cpp::GetMethodRecursively(componentKlass, "get_transform", 0);
+            }
+            
+            transformKlass = Il2Cpp::GetClass("UnityEngine.CoreModule.dll", "UnityEngine", "Transform");
+            if (transformKlass) {
+                getPosMethod = Il2Cpp::GetMethodRecursively(transformKlass, "get_position", 0);
+                getRotMethod = Il2Cpp::GetMethodRecursively(transformKlass, "get_rotation", 0);
+                setRotMethod = Il2Cpp::GetMethodRecursively(transformKlass, "set_rotation", 1);
+            }
+            
+            quatKlass = Il2Cpp::GetClass("UnityEngine.CoreModule.dll", "UnityEngine", "Quaternion");
+            if (quatKlass) {
+                lookRotMethod = Il2Cpp::GetMethodRecursively(quatKlass, "LookRotation", 1);
+                slerpMethod = Il2Cpp::GetMethodRecursively(quatKlass, "Slerp", 3);
+            }
+
             methodsSearched = true;
+        }
+
+        // Cache do metodo SetAimRotation no Player
+        if (!setAimRotationMethod && sharedState.localPlayerObj) {
+            void* playerKlass = Il2Cpp::object_get_class(sharedState.localPlayerObj);
+            if (playerKlass) {
+                setAimRotationMethod = Il2Cpp::GetMethodRecursively(playerKlass, "SetAimRotation", 2);
+            }
         }
 
         if (!get_mainMethod || !worldToScreenMethod) return;
@@ -373,18 +453,28 @@ namespace GhostSystems {
 
         ImDrawList* drawList = ImGui::GetBackgroundDrawList();
         ImVec2 screenSize = ImGui::GetIO().DisplaySize;
+        ImVec2 screenCenter(screenSize.x / 2.0f, screenSize.y / 2.0f);
 
-        if (!espEnabled) return;
+        // Desenha o circulo de FOV do Aimbot
+        if (aimbotEnabled && aimbotDrawFov) {
+            drawList->AddCircle(screenCenter, aimbotFov, IM_COL32(255, 255, 255, 100), 64, 1.0f);
+        }
+
+        if (!espEnabled && !aimbotEnabled) return;
+
+        struct Vector3Args { float x, y, z; };
+        struct QuaternionArgs { float x, y, z, w; };
+
+        float closestAimbotDist = 999999.0f;
+        ImVec2 bestTargetPos(0, 0);
+        Vector3Args bestTargetWorldPos = {0, 0, 0};
+        bool foundAimbotTarget = false;
 
         for (const auto& entity : localEntities) {
             // Ignora se estiver morto e o filtro de mortos estiver ativo (opcional, aqui pularemos mortos sempre pra nao poluir)
             if (!entity.isAlive()) continue;
 
             // Box positions (pés até a cabeça)
-            struct Vector3Args {
-                float x, y, z;
-            };
-
             Vector3Args posFeet = {entity.position.x, entity.position.y, entity.position.z};
             // Adicionamos a altura do jogador (1.41) na coordenada Y
             Vector3Args posHead = {entity.position.x, entity.position.y + 1.41f, entity.position.z};
@@ -418,8 +508,25 @@ namespace GhostSystems {
                 ImVec2 bottomRight(xFeet + boxWidth / 2.0f, yFeet);
 
                 ImU32 color = (entity.alignment == Alignment::ENEMY) ? IM_COL32(255, 0, 0, 255) : IM_COL32(0, 255, 0, 255);
+
+                // Lógica de FOV (Aimbot) - Checa a distancia para o centro da tela
+                if (aimbotEnabled) {
+                    float distToCenter = sqrt(pow(xHead - screenCenter.x, 2) + pow(yHead - screenCenter.y, 2));
+                    if (distToCenter <= aimbotFov && distToCenter < closestAimbotDist) {
+                        closestAimbotDist = distToCenter;
+                        bestTargetPos = ImVec2(xHead, yHead);
+                        bestTargetWorldPos = posHead; // Marca a cabeca como alvo em 3D
+                        foundAimbotTarget = true;
+                        
+                        // Guarda informacoes de Debug
+                        aimbotTargetName = entity.name;
+                        aimbotTargetDistFOV = distToCenter;
+                        aimbotTargetDist3D = entity.distanceToLocal;
+                    }
+                }
                 
-                if (espBox) {
+                if (espEnabled) {
+                    if (espBox) {
                     // Desenha o retangulo (Box ESP)
                     drawList->AddRect(topLeft, bottomRight, color, 0.0f, 0, 1.5f);
                     
@@ -466,6 +573,114 @@ namespace GhostSystems {
                     drawList->AddText(ImVec2(textPos.x - 1, textPos.y - 1), IM_COL32(0, 0, 0, 255), textBuffer);
                     drawList->AddText(textPos, IM_COL32(255, 255, 255, 255), textBuffer);
                 }
+                } // Fim do espEnabled
+            }
+        }
+
+        // Desenhar linha do Aimbot para o alvo travado
+        aimbotHasTarget = foundAimbotTarget;
+        if (!foundAimbotTarget) {
+            aimbotTargetName = "Nenhum";
+            aimbotTargetDistFOV = 0.0f;
+            aimbotTargetDist3D = 0.0f;
+            aimbotErrorLog = "Buscando alvos no FOV...";
+        }
+
+        if (aimbotEnabled && foundAimbotTarget) {
+            drawList->AddLine(screenCenter, bestTargetPos, IM_COL32(255, 0, 0, 255), 2.0f);
+            drawList->AddCircle(bestTargetPos, 5.0f, IM_COL32(255, 0, 0, 255), 12, 2.0f);
+
+            // APLICAR ROTAÇÃO NA CÂMERA (Aim Lock 3D)
+            if (getTransformMethod && getPosMethod && getRotMethod && setRotMethod && lookRotMethod && slerpMethod) {
+                void* cameraTransform = Il2Cpp::runtime_invoke(getTransformMethod, mainCamera, nullptr, &exc);
+                if (cameraTransform && !exc) {
+                    void* camPosObj = Il2Cpp::runtime_invoke(getPosMethod, cameraTransform, nullptr, &exc);
+                    if (camPosObj && !exc) {
+                        Vector3Args camPos = *(Vector3Args*)((uintptr_t)camPosObj + 0x10);
+                        
+                        aimbotCamPosX = camPos.x;
+                        aimbotCamPosY = camPos.y;
+                        aimbotCamPosZ = camPos.z;
+
+                        // Vetor direcional para o alvo (Cabeca)
+                        Vector3Args dir = { bestTargetWorldPos.x - camPos.x, bestTargetWorldPos.y - camPos.y, bestTargetWorldPos.z - camPos.z };
+                        
+                        // LookRotation
+                        void* argsRot[1] = { &dir };
+                        void* targetRotObj = Il2Cpp::runtime_invoke(lookRotMethod, nullptr, argsRot, &exc);
+                        if (targetRotObj && !exc) {
+                            QuaternionArgs targetRot = *(QuaternionArgs*)((uintptr_t)targetRotObj + 0x10);
+                            
+                            aimbotTargetRotX = targetRot.x;
+                            aimbotTargetRotY = targetRot.y;
+                            aimbotTargetRotZ = targetRot.z;
+                            aimbotTargetRotW = targetRot.w;
+
+                            // Slerp
+                            void* camRotObj = Il2Cpp::runtime_invoke(getRotMethod, cameraTransform, nullptr, &exc);
+                            if (camRotObj && !exc) {
+                                QuaternionArgs camRot = *(QuaternionArgs*)((uintptr_t)camRotObj + 0x10);
+                                
+                                aimbotCamRotX = camRot.x;
+                                aimbotCamRotY = camRot.y;
+                                aimbotCamRotZ = camRot.z;
+                                aimbotCamRotW = camRot.w;
+
+                                float deltaTime = ImGui::GetIO().DeltaTime;
+                                float lerpT = aimbotSmooth * deltaTime;
+                                if (lerpT > 1.0f) lerpT = 1.0f;
+
+                                void* argsSlerp[3] = { &camRot, &targetRot, &lerpT };
+                                void* newRotObj = Il2Cpp::runtime_invoke(slerpMethod, nullptr, argsSlerp, &exc);
+                                
+                                if (newRotObj && !exc) {
+                                    QuaternionArgs newRot = *(QuaternionArgs*)((uintptr_t)newRotObj + 0x10);
+                                    
+                                    aimbotNewRotX = newRot.x;
+                                    aimbotNewRotY = newRot.y;
+                                    aimbotNewRotZ = newRot.z;
+                                    aimbotNewRotW = newRot.w;
+                                    
+                                    // set_rotation (escreve a rotacao na camera principal)
+                                    void* argsSetRot[1] = { &newRot };
+                                    Il2Cpp::runtime_invoke(setRotMethod, cameraTransform, argsSetRot, &exc);
+                                    
+                                    bool aimSetSuccess = false;
+                                    if (setAimRotationMethod && sharedState.localPlayerObj) {
+                                        bool isTrue = true;
+                                        void* argsAim[2] = { &newRot, &isTrue };
+                                        Il2Cpp::runtime_invoke(setAimRotationMethod, sharedState.localPlayerObj, argsAim, &exc);
+                                        if (!exc) {
+                                            aimSetSuccess = true;
+                                        }
+                                    }
+                                    
+                                    if (exc) {
+                                        aimbotErrorLog = "Erro ao invocar set_rotation / SetAimRotation.";
+                                    } else {
+                                        if (aimSetSuccess) {
+                                            aimbotErrorLog = "Rotacao (Camera + Player Aim) aplicada com sucesso!";
+                                        } else {
+                                            aimbotErrorLog = "Rotacao da camera aplicada, mas falhou no Player Aim.";
+                                        }
+                                    }
+                                } else {
+                                    aimbotErrorLog = "Erro ao invocar Slerp.";
+                                }
+                            } else {
+                                aimbotErrorLog = "Erro ao obter get_rotation da Camera.";
+                            }
+                        } else {
+                            aimbotErrorLog = "Erro ao invocar LookRotation.";
+                        }
+                    } else {
+                        aimbotErrorLog = "Erro ao obter get_position da Camera.";
+                    }
+                } else {
+                    aimbotErrorLog = "Erro ao obter get_transform da Camera.";
+                }
+            } else {
+                aimbotErrorLog = "Metodos do Unity (Transform/Quaternion) nao encontrados no cache.";
             }
         }
     }
