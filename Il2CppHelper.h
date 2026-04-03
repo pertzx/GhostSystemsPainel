@@ -12,6 +12,10 @@ typedef void* (*il2cpp_class_get_field_from_name_t)(void* klass, const char* nam
 typedef void* (*il2cpp_class_get_method_from_name_t)(void* klass, const char* name, int argsCount);
 typedef const char* (*il2cpp_class_get_name_t)(void* klass);
 typedef void* (*il2cpp_class_get_fields_t)(void* klass, void** iter);
+typedef void* (*il2cpp_class_get_methods_t)(void* klass, void** iter);
+typedef const char* (*il2cpp_method_get_name_t)(void* method);
+typedef uint32_t (*il2cpp_method_get_param_count_t)(void* method);
+typedef void* (*il2cpp_method_get_param_t)(void* method, uint32_t index);
 typedef const char* (*il2cpp_field_get_name_t)(void* field);
 typedef size_t (*il2cpp_field_get_offset_t)(void* field);
 typedef void* (*il2cpp_field_get_type_t)(void* field);
@@ -44,6 +48,10 @@ namespace Il2Cpp {
     inline il2cpp_class_get_name_t class_get_name = nullptr;
     inline il2cpp_class_get_parent_t class_get_parent = nullptr;
     inline il2cpp_class_get_fields_t class_get_fields = nullptr;
+    inline il2cpp_class_get_methods_t class_get_methods = nullptr;
+    inline il2cpp_method_get_name_t method_get_name = nullptr;
+    inline il2cpp_method_get_param_count_t method_get_param_count = nullptr;
+    inline il2cpp_method_get_param_t method_get_param = nullptr;
     inline il2cpp_field_get_name_t field_get_name = nullptr;
     inline il2cpp_field_get_offset_t field_get_offset = nullptr;
     inline il2cpp_field_get_type_t field_get_type = nullptr;
@@ -77,6 +85,10 @@ namespace Il2Cpp {
         class_get_name = (il2cpp_class_get_name_t)dlsym(handle, "il2cpp_class_get_name");
         class_get_parent = (il2cpp_class_get_parent_t)dlsym(handle, "il2cpp_class_get_parent");
         class_get_fields = (il2cpp_class_get_fields_t)dlsym(handle, "il2cpp_class_get_fields");
+        class_get_methods = (il2cpp_class_get_methods_t)dlsym(handle, "il2cpp_class_get_methods");
+        method_get_name = (il2cpp_method_get_name_t)dlsym(handle, "il2cpp_method_get_name");
+        method_get_param_count = (il2cpp_method_get_param_count_t)dlsym(handle, "il2cpp_method_get_param_count");
+        method_get_param = (il2cpp_method_get_param_t)dlsym(handle, "il2cpp_method_get_param");
         field_get_name = (il2cpp_field_get_name_t)dlsym(handle, "il2cpp_field_get_name");
         field_get_offset = (il2cpp_field_get_offset_t)dlsym(handle, "il2cpp_field_get_offset");
         field_get_type = (il2cpp_field_get_type_t)dlsym(handle, "il2cpp_field_get_type");
@@ -125,6 +137,32 @@ namespace Il2Cpp {
             void* method = class_get_method_from_name(curr, methodName, argsCount);
             if (method) return method;
             curr = class_get_parent(curr);
+        }
+        return nullptr;
+    }
+
+    inline void* FindMethod(void* klass, const char* methodName, int argsCount, const char** argTypes) {
+        if (!class_get_methods || !method_get_name || !method_get_param_count || !method_get_param || !type_get_name) return nullptr;
+        
+        void* iter = nullptr;
+        while (void* method = class_get_methods(klass, &iter)) {
+            const char* name = method_get_name(method);
+            if (!name || strcmp(name, methodName) != 0) continue;
+            
+            uint32_t count = method_get_param_count(method);
+            if (count != argsCount) continue;
+            
+            bool match = true;
+            for (int i = 0; i < argsCount; ++i) {
+                void* paramType = method_get_param(method, i);
+                const char* typeName = type_get_name(paramType);
+                if (!typeName || strstr(typeName, argTypes[i]) == nullptr) {
+                    match = false;
+                    break;
+                }
+            }
+            
+            if (match) return method;
         }
         return nullptr;
     }

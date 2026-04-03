@@ -161,11 +161,11 @@ namespace GhostSystems {
                 
                 ImGui::Separator();
                 ImGui::TextColored(ImVec4(1.0f, 1.0f, 0.0f, 1.0f), "Configurações de Transição (Peito -> Cabeça)");
-                ImGui::SliderFloat(OBFUSCATE("Tempo p/ Cabeça (ms)"), &aimbotTransitionTimeMs, 0.0f, 2000.0f, "%.0f ms");
+                ImGui::SliderFloat(OBFUSCATE("Tempo p/ Cabeça (ms)"), &aimbotTransitionTimeMs, 0.0f, 500.0f, "%.0f ms");
                 if (aimbotTransitionTimeMs < 50.0f) {
-                    ImGui::TextColored(ImVec4(1.0f, 0.0f, 0.0f, 1.0f), "Transição: RAGE (Instantâneo)");
+                    ImGui::TextColored(ImVec4(1.0f, 0.0f, 0.0f, 1.0f), "Modo RAGE");
                 } else {
-                    ImGui::TextColored(ImVec4(0.0f, 1.0f, 0.0f, 1.0f), "Transição: SAFE (Suave)");
+                    ImGui::TextColored(ImVec4(0.0f, 1.0f, 0.0f, 1.0f), "Modo LEGIT");
                 }
                 ImGui::SliderFloat(OBFUSCATE("Força/Curva"), &aimbotTransitionCurve, 1.0f, 10.0f, "%.1f");
                 
@@ -459,6 +459,11 @@ namespace GhostSystems {
         static void* animatorTypeObject = nullptr;
         static void* getBoneTransformMethod = nullptr;
         static void* getBoneByNameMethod = nullptr;
+        
+        static void* physicsKlass = nullptr;
+        static void* raycastMethod = nullptr;
+        static void* getGameObjectMethod = nullptr;
+        static void* getLayerMethod = nullptr;
 
         static bool methodsSearched = false;
 
@@ -554,6 +559,12 @@ namespace GhostSystems {
             componentKlass = Il2Cpp::GetClass("UnityEngine.CoreModule.dll", "UnityEngine", "Component");
             if (componentKlass) {
                 getTransformMethod = Il2Cpp::GetMethodRecursively(componentKlass, "get_transform", 0);
+                getGameObjectMethod = Il2Cpp::GetMethodRecursively(componentKlass, "get_gameObject", 0);
+            }
+            
+            void* gameObjectKlass = Il2Cpp::GetClass("UnityEngine.CoreModule.dll", "UnityEngine", "GameObject");
+            if (gameObjectKlass) {
+                getLayerMethod = Il2Cpp::GetMethodRecursively(gameObjectKlass, "get_layer", 0);
             }
             
             transformKlass = Il2Cpp::GetClass("UnityEngine.CoreModule.dll", "UnityEngine", "Transform");
@@ -567,6 +578,12 @@ namespace GhostSystems {
             if (quatKlass) {
                 lookRotMethod = Il2Cpp::GetMethodRecursively(quatKlass, "LookRotation", 1);
                 slerpMethod = Il2Cpp::GetMethodRecursively(quatKlass, "Slerp", 3);
+            }
+
+            physicsKlass = Il2Cpp::GetClass("UnityEngine.PhysicsModule.dll", "UnityEngine", "Physics");
+            if (physicsKlass) {
+                const char* argTypes[] = { "Vector3", "Vector3", "Single", "Int32" };
+                raycastMethod = Il2Cpp::FindMethod(physicsKlass, "Raycast", 4, argTypes);
             }
 
             methodsSearched = true;
@@ -622,23 +639,48 @@ namespace GhostSystems {
         bool foundAimbotTarget = false;
         void* bestTargetObj = nullptr;
 
+        // Pré-calcula a posição do jogador local UMA VEZ por frame (Evita vazamento de memória e travamentos pelo Garbage Collector)
+        Vector3Args localPos = { sharedState.localPlayerPos.x, sharedState.localPlayerPos.y, sharedState.localPlayerPos.z }; // Fallback
+        Vector3Args localHeadPos = { localPos.x, localPos.y + 1.41f, localPos.z }; // Fallback
+        bool localPosValid = false;
+
+        if (sharedState.localPlayerObj) {
+            void* exc = nullptr;
+            void* localTransform = Il2Cpp::runtime_invoke(getTransformMethod, sharedState.localPlayerObj, nullptr, &exc);
+            if (localTransform && !exc) {
+                void* localPosObj = Il2Cpp::runtime_invoke(getPosMethod, localTransform, nullptr, &exc);
+                if (localPosObj && !exc) {
+                    localPos = *(Vector3Args*)((uintptr_t)localPosObj + 0x10);
+                    localPosValid = true;
+                }
+            }
+            
+            if (getHeadTFMethod) {
+                exc = nullptr;
+                void* localHeadTF = Il2Cpp::runtime_invoke(getHeadTFMethod, sharedState.localPlayerObj, nullptr, &exc);
+                if (localHeadTF && !exc) {
+                    void* localHeadPosObj = Il2Cpp::runtime_invoke(getPosMethod, localHeadTF, nullptr, &exc);
+                    if (localHeadPosObj && !exc) {
+                        localHeadPos = *(Vector3Args*)((uintptr_t)localHeadPosObj + 0x10);
+                    }
+                }
+            }
+        }
+
         for (const auto& entity : localEntities) {
             // Ignora se estiver morto e o filtro de mortos estiver ativo (opcional, aqui pularemos mortos sempre pra nao poluir)
             if (!entity.isAlive()) continue;
             
-            // Calcula a distância 3D entre o jogador local e a entidade
+            // Calcula a distância 3D entre o jogador local e a entidade usando as coordenadas pré-calculadas
             float distance3D = 0.0f;
-            if (sharedState.localPlayerObj) {
-                void* localTransform = Il2Cpp::runtime_invoke(getTransformMethod, sharedState.localPlayerObj, nullptr, &exc);
-                if (localTransform && !exc) {
-                    void* localPosObj = Il2Cpp::runtime_invoke(getPosMethod, localTransform, nullptr, &exc);
-                    if (localPosObj && !exc) {
-                        Vector3Args localPos = *(Vector3Args*)((uintptr_t)localPosObj + 0x10);
-                        distance3D = sqrt(pow(entity.position.x - localPos.x, 2) + 
-                                          pow(entity.position.y - localPos.y, 2) + 
-                                          pow(entity.position.z - localPos.z, 2));
-                    }
-                }
+            if (localPosValid) {
+                distance3D = sqrt(pow(entity.position.x - localPos.x, 2) + 
+                                  pow(entity.position.y - localPos.y, 2) + 
+                                  pow(entity.position.z - localPos.z, 2));
+            } else {
+                distance3D = sqrt(pow(entity.position.x - sharedState.localPlayerPos.x, 2) + 
+                                  pow(entity.position.y - sharedState.localPlayerPos.y, 2) + 
+                                  pow(entity.position.z - sharedState.localPlayerPos.z, 2));
             }
 
             // Box positions (pés até a cabeça)
@@ -694,11 +736,59 @@ namespace GhostSystems {
                 // Lógica de FOV (Aimbot) - Checa a distancia para o centro da tela
                 if (aimbotEnabled) {
                     bool visible = true;
-                    if (aimbotVisibilityCheck && isVisibleMethod && entity.obj) {
-                        void* exc = nullptr;
-                        void* isVisObj = Il2Cpp::runtime_invoke(isVisibleMethod, entity.obj, nullptr, &exc);
-                        if (isVisObj && !exc) {
-                            visible = *(bool*)((uintptr_t)isVisObj + 0x10);
+                    if (aimbotVisibilityCheck && entity.obj) {
+                        // 1. Tenta checar visibilidade pelo IsVisible do Free Fire (Frustum/Render)
+                        if (isVisibleMethod) {
+                            typedef bool (*IsVisible_t)(void* _this, void* methodInfo);
+                            IsVisible_t pIsVisible = (IsVisible_t)*(void**)isVisibleMethod;
+                            if (pIsVisible) {
+                                visible = pIsVisible(entity.obj, isVisibleMethod);
+                            }
+                        }
+                        
+                        // 2. Checa colisao com paredes usando Physics.Raycast
+                        if (visible && raycastMethod && sharedState.localPlayerObj) {
+                            // Usa a posicao da cabeca do local player já pré-calculada fora do loop
+                            
+                            // Calcula direcao e distancia exata
+                            float dx = posHead.x - localHeadPos.x;
+                            float dy = posHead.y - localHeadPos.y;
+                            float dz = posHead.z - localHeadPos.z;
+                            float dist = sqrt(dx*dx + dy*dy + dz*dz);
+                            
+                            if (dist > 1.0f) {
+                                Vector3Args dir = { dx/dist, dy/dist, dz/dist };
+                                
+                                // Avança a origem um pouco para não bater no próprio colisor (0.5 metros da cabeça)
+                                Vector3Args origin = { 
+                                    localHeadPos.x + dir.x * 0.5f,
+                                    localHeadPos.y + dir.y * 0.5f,
+                                    localHeadPos.z + dir.z * 0.5f 
+                                };
+                                
+                                // Diminui a distância máxima para não bater no colisor do inimigo (1.0 no total)
+                                float rayDist = dist - 1.0f;
+                                if (rayDist < 0.1f) rayDist = 0.1f;
+                                
+                                // Usa uma LayerMask estatica padrão (ignora UI(5), Water(4), IgnoreRaycast(2))
+                                // Como removemos a busca por get_gameObject e get_layer, evitamos 100% de chamadas do Il2Cpp::runtime_invoke na Engine
+                                // e eliminamos qualquer chance de MissingReferenceException.
+                                int layerMask = ~((1 << 2) | (1 << 4) | (1 << 5));
+                                
+                                typedef bool (*Raycast_t)(Vector3Args origin, Vector3Args direction, float maxDistance, int layerMask, void* methodInfo);
+                                Raycast_t pRaycast = (Raycast_t)*(void**)raycastMethod;
+                                
+                                if (pRaycast) {
+                                    // Se Raycast bater em algo nesse layerMask, tem parede/obstaculo na frente
+                                    bool hitObstacle = pRaycast(origin, dir, rayDist, layerMask, raycastMethod);
+                                    if (hitObstacle) {
+                                        visible = false;
+                                    }
+                                }
+                            } else {
+                                // Muito perto para ter uma parede entre os dois
+                                visible = true;
+                            }
                         }
                     }
 
