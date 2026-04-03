@@ -393,6 +393,9 @@ namespace GhostSystems {
                                             }
                                         }
 
+                                        // Salva o ponteiro do objeto
+                                        p.obj = entityObj;
+
                                         if (getIsDeadMethod) {
                                             void* deadObj = Il2Cpp::runtime_invoke(getIsDeadMethod, entityObj, nullptr, nullptr);
                                             if (deadObj) p.isKnocked = *(bool*)((uintptr_t)deadObj + 0x10);

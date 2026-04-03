@@ -34,6 +34,7 @@ namespace GhostSystems {
         int teamId;
         float distanceToLocal;
         Alignment alignment;
+        void* obj; // Ponteiro Il2Cpp do jogador
         
         bool isAlive() const { return health > 0.0f; }
         float getHealthPercentage() const { return (health / maxHealth) * 100.0f; }

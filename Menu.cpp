@@ -416,6 +416,7 @@ namespace GhostSystems {
         static void* slerpMethod = nullptr;
         static void* setAimRotationMethod = nullptr;
         static void* isFiringMethod = nullptr;
+        static void* getHeadTFMethod = nullptr;
 
         static bool methodsSearched = false;
 
@@ -453,6 +454,7 @@ namespace GhostSystems {
             if (playerKlass) {
                 setAimRotationMethod = Il2Cpp::GetMethodRecursively(playerKlass, "SetAimRotation", 2);
                 isFiringMethod = Il2Cpp::GetMethodRecursively(playerKlass, "IsFiring", 0);
+                getHeadTFMethod = Il2Cpp::GetMethodRecursively(playerKlass, "GetHeadTF", 0);
             }
         }
 
@@ -487,8 +489,18 @@ namespace GhostSystems {
 
             // Box positions (pés até a cabeça)
             Vector3Args posFeet = {entity.position.x, entity.position.y, entity.position.z};
-            // Adicionamos a altura do jogador (1.34) na coordenada Y para pegar a cabeca exata
-            Vector3Args posHead = {entity.position.x, entity.position.y + 1.34f, entity.position.z};
+            
+            // Tenta pegar a posicao real da cabeca pelo Transform GetHeadTF()
+            Vector3Args posHead = {entity.position.x, entity.position.y + 1.34f, entity.position.z}; // fallback caso falhe
+            if (getHeadTFMethod && entity.obj) {
+                void* headTransform = Il2Cpp::runtime_invoke(getHeadTFMethod, entity.obj, nullptr, &exc);
+                if (headTransform && !exc) {
+                    void* headPosObj = Il2Cpp::runtime_invoke(getPosMethod, headTransform, nullptr, &exc);
+                    if (headPosObj && !exc) {
+                        posHead = *(Vector3Args*)((uintptr_t)headPosObj + 0x10);
+                    }
+                }
+            }
 
             void* argsFeet[1] = { &posFeet };
             void* argsHead[1] = { &posHead };
