@@ -46,10 +46,11 @@ namespace GhostSystems {
 
         // Configurações de Aimbot
         bool aimbotEnabled = true;
+        int aimbotMode = 1; // 0 = Tradicional (Ao Atirar), 1 = Aimlock (Sempre)
         bool aimbotDrawFov = true;
         bool aimbotTargetAllies = true;
         float aimbotFov = 200.0f;
-        float aimbotSmooth = 5.0f;
+        int aimbotTimeMs = 100; // Tempo em milissegundos para puxar a mira
 
         // Variaveis de Debug Aimbot
         bool aimbotHasTarget = false;

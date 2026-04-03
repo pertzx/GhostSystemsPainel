@@ -140,10 +140,19 @@ namespace GhostSystems {
                 if (ImGui::BeginTabItem("Aimbot")) {
                     ImGui::Checkbox(OBFUSCATE("Ativar Aimbot"), &aimbotEnabled);
                     if (aimbotEnabled) {
+                        const char* aimbotModes[] = { "Tradicional (Ao Atirar)", "Aimlock (Sempre)" };
+                        ImGui::Combo("Modo", &aimbotMode, aimbotModes, IM_ARRAYSIZE(aimbotModes));
                         ImGui::Checkbox(OBFUSCATE("Mostrar FOV"), &aimbotDrawFov);
                         ImGui::Checkbox(OBFUSCATE("Mirar em Aliados"), &aimbotTargetAllies);
                         ImGui::SliderFloat(OBFUSCATE("Raio do FOV"), &aimbotFov, 10.0f, 500.0f, "%.0f px");
-                        ImGui::SliderFloat(OBFUSCATE("Suavidade (Smooth)"), &aimbotSmooth, 1.0f, 20.0f, "%.1f");
+                        ImGui::SliderInt(OBFUSCATE("Tempo de Puxada (ms)"), &aimbotTimeMs, 0, 300, "%d ms");
+                        
+                        if (aimbotTimeMs < 50) {
+                            ImGui::TextColored(ImVec4(1.0f, 0.0f, 0.0f, 1.0f), "Rage Aim (Instantaneo)");
+                        } else {
+                            ImGui::TextColored(ImVec4(0.0f, 1.0f, 0.0f, 1.0f), "Safe Aim (Suave)");
+                        }
+                        
                         ImGui::TextColored(ImVec4(0.5f, 0.5f, 0.5f, 1.0f), "A mira foca no inimigo mais proximo do centro (FOV).");
                     }
                     ImGui::EndTabItem();
@@ -406,6 +415,7 @@ namespace GhostSystems {
         static void* lookRotMethod = nullptr;
         static void* slerpMethod = nullptr;
         static void* setAimRotationMethod = nullptr;
+        static void* isFiringMethod = nullptr;
 
         static bool methodsSearched = false;
 
@@ -442,6 +452,7 @@ namespace GhostSystems {
             void* playerKlass = Il2Cpp::object_get_class(sharedState.localPlayerObj);
             if (playerKlass) {
                 setAimRotationMethod = Il2Cpp::GetMethodRecursively(playerKlass, "SetAimRotation", 2);
+                isFiringMethod = Il2Cpp::GetMethodRecursively(playerKlass, "IsFiring", 0);
             }
         }
 
@@ -477,7 +488,7 @@ namespace GhostSystems {
             // Box positions (pés até a cabeça)
             Vector3Args posFeet = {entity.position.x, entity.position.y, entity.position.z};
             // Adicionamos a altura do jogador (1.41) na coordenada Y
-            Vector3Args posHead = {entity.position.x, entity.position.y + 1.41f, entity.position.z};
+            Vector3Args posHead = {entity.position.x, entity.position.y + 1.37f, entity.position.z};
 
             void* argsFeet[1] = { &posFeet };
             void* argsHead[1] = { &posHead };
@@ -590,8 +601,22 @@ namespace GhostSystems {
             drawList->AddLine(screenCenter, bestTargetPos, IM_COL32(255, 0, 0, 255), 2.0f);
             drawList->AddCircle(bestTargetPos, 5.0f, IM_COL32(255, 0, 0, 255), 12, 2.0f);
 
+            bool shouldAim = true;
+            if (aimbotMode == 0) { // Tradicional (Ao Atirar)
+                shouldAim = false;
+                if (isFiringMethod && sharedState.localPlayerObj) {
+                    void* isFiringObj = Il2Cpp::runtime_invoke(isFiringMethod, sharedState.localPlayerObj, nullptr, &exc);
+                    if (isFiringObj && !exc) {
+                        shouldAim = *(bool*)((uintptr_t)isFiringObj + 0x10);
+                    }
+                }
+                if (!shouldAim) {
+                    aimbotErrorLog = "Aguardando disparo (Modo Tradicional)...";
+                }
+            }
+
             // APLICAR ROTAÇÃO NA CÂMERA (Aim Lock 3D)
-            if (getTransformMethod && getPosMethod && getRotMethod && setRotMethod && lookRotMethod && slerpMethod) {
+            if (shouldAim && getTransformMethod && getPosMethod && getRotMethod && setRotMethod && lookRotMethod && slerpMethod) {
                 void* cameraTransform = Il2Cpp::runtime_invoke(getTransformMethod, mainCamera, nullptr, &exc);
                 if (cameraTransform && !exc) {
                     void* camPosObj = Il2Cpp::runtime_invoke(getPosMethod, cameraTransform, nullptr, &exc);
@@ -627,8 +652,14 @@ namespace GhostSystems {
                                 aimbotCamRotW = camRot.w;
 
                                 float deltaTime = ImGui::GetIO().DeltaTime;
-                                float lerpT = aimbotSmooth * deltaTime;
-                                if (lerpT > 1.0f) lerpT = 1.0f;
+                                float lerpT = 1.0f;
+                                if (aimbotTimeMs > 0) {
+                                    // A velocidade é o inverso do tempo. Ex: 100ms -> demora 0.1s. 
+                                    // Slerp é exponencial. Um speed de 10 significa que a cada frame ele anda 10*DeltaTime em direção ao alvo.
+                                    float speed = 1000.0f / (float)aimbotTimeMs;
+                                    lerpT = speed * deltaTime;
+                                    if (lerpT > 1.0f) lerpT = 1.0f;
+                                }
 
                                 void* argsSlerp[3] = { &camRot, &targetRot, &lerpT };
                                 void* newRotObj = Il2Cpp::runtime_invoke(slerpMethod, nullptr, argsSlerp, &exc);
