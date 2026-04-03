@@ -140,21 +140,21 @@ namespace GhostSystems {
                 if (ImGui::BeginTabItem("Aimbot")) {
                     ImGui::Checkbox(OBFUSCATE("Ativar Aimbot"), &aimbotEnabled);
                     if (aimbotEnabled) {
-                        const char* aimbotModes[] = { "Tradicional (Ao Atirar)", "Aimlock (Sempre)" };
-                        ImGui::Combo("Modo", &aimbotMode, aimbotModes, IM_ARRAYSIZE(aimbotModes));
-                        ImGui::Checkbox(OBFUSCATE("Mostrar FOV"), &aimbotDrawFov);
-                        ImGui::Checkbox(OBFUSCATE("Mirar em Aliados"), &aimbotTargetAllies);
-                        ImGui::SliderFloat(OBFUSCATE("Raio do FOV"), &aimbotFov, 10.0f, 500.0f, "%.0f px");
-                        ImGui::SliderInt(OBFUSCATE("Tempo de Puxada (ms)"), &aimbotTimeMs, 0, 300, "%d ms");
-                        
-                        if (aimbotTimeMs < 50) {
-                            ImGui::TextColored(ImVec4(1.0f, 0.0f, 0.0f, 1.0f), "Rage Aim (Instantaneo)");
-                        } else {
-                            ImGui::TextColored(ImVec4(0.0f, 1.0f, 0.0f, 1.0f), "Safe Aim (Suave)");
-                        }
-                        
-                        ImGui::TextColored(ImVec4(0.5f, 0.5f, 0.5f, 1.0f), "A mira foca no inimigo mais proximo do centro (FOV).");
-                    }
+                const char* aimbotModes[] = { "Tradicional (Ao Atirar)", "Aimlock (Sempre)" };
+                ImGui::Combo("Modo", &aimbotMode, aimbotModes, IM_ARRAYSIZE(aimbotModes));
+                ImGui::Checkbox(OBFUSCATE("Mostrar FOV"), &aimbotDrawFov);
+                ImGui::Checkbox(OBFUSCATE("Mirar em Aliados"), &aimbotTargetAllies);
+                ImGui::SliderFloat(OBFUSCATE("Raio do FOV"), &aimbotFov, 10.0f, 500.0f, "%.0f px");
+                ImGui::SliderInt(OBFUSCATE("Atraso/Delay (ms)"), &aimbotTimeMs, 0, 300, "%d ms");
+                
+                if (aimbotTimeMs < 50) {
+                    ImGui::TextColored(ImVec4(1.0f, 0.0f, 0.0f, 1.0f), "Rage Aim (Sem Atraso)");
+                } else {
+                    ImGui::TextColored(ImVec4(0.0f, 1.0f, 0.0f, 1.0f), "Safe Aim (Com Atraso)");
+                }
+                
+                ImGui::TextColored(ImVec4(0.5f, 0.5f, 0.5f, 1.0f), "A mira foca no inimigo mais proximo do centro (FOV).");
+            }
                     ImGui::EndTabItem();
                 }
 
@@ -487,8 +487,8 @@ namespace GhostSystems {
 
             // Box positions (pés até a cabeça)
             Vector3Args posFeet = {entity.position.x, entity.position.y, entity.position.z};
-            // Adicionamos a altura do jogador (1.41) na coordenada Y
-            Vector3Args posHead = {entity.position.x, entity.position.y + 1.37f, entity.position.z};
+            // Adicionamos a altura do jogador (1.34) na coordenada Y para pegar a cabeca exata
+            Vector3Args posHead = {entity.position.x, entity.position.y + 1.34f, entity.position.z};
 
             void* argsFeet[1] = { &posFeet };
             void* argsHead[1] = { &posHead };
@@ -615,8 +615,28 @@ namespace GhostSystems {
                 }
             }
 
+            float deltaTime = ImGui::GetIO().DeltaTime;
+            
+            // Controle do Delay (Time ms) antes de cravar a mira
+            bool delayPassed = true;
+            if (shouldAim) {
+                if (!wasAimingLastFrame) {
+                    aimbotDelayTimer = 0.0f;
+                }
+                aimbotDelayTimer += deltaTime * 1000.0f; // Converte para ms
+                
+                if (aimbotDelayTimer < (float)aimbotTimeMs) {
+                    delayPassed = false;
+                    aimbotErrorLog = "Aguardando Delay (Time ms)...";
+                }
+                wasAimingLastFrame = true;
+            } else {
+                wasAimingLastFrame = false;
+                aimbotDelayTimer = 0.0f;
+            }
+
             // APLICAR ROTAÇÃO NA CÂMERA (Aim Lock 3D)
-            if (shouldAim && getTransformMethod && getPosMethod && getRotMethod && setRotMethod && lookRotMethod && slerpMethod) {
+            if (shouldAim && delayPassed && getTransformMethod && getPosMethod && getRotMethod && setRotMethod && lookRotMethod) {
                 void* cameraTransform = Il2Cpp::runtime_invoke(getTransformMethod, mainCamera, nullptr, &exc);
                 if (cameraTransform && !exc) {
                     void* camPosObj = Il2Cpp::runtime_invoke(getPosMethod, cameraTransform, nullptr, &exc);
@@ -641,65 +661,35 @@ namespace GhostSystems {
                             aimbotTargetRotZ = targetRot.z;
                             aimbotTargetRotW = targetRot.w;
 
-                            // Slerp
-                            void* camRotObj = Il2Cpp::runtime_invoke(getRotMethod, cameraTransform, nullptr, &exc);
-                            if (camRotObj && !exc) {
-                                QuaternionArgs camRot = *(QuaternionArgs*)((uintptr_t)camRotObj + 0x10);
-                                
-                                aimbotCamRotX = camRot.x;
-                                aimbotCamRotY = camRot.y;
-                                aimbotCamRotZ = camRot.z;
-                                aimbotCamRotW = camRot.w;
-
-                                float deltaTime = ImGui::GetIO().DeltaTime;
-                                float lerpT = 1.0f;
-                                if (aimbotTimeMs > 0) {
-                                    // A velocidade é o inverso do tempo. Ex: 100ms -> demora 0.1s. 
-                                    // Slerp é exponencial. Um speed de 10 significa que a cada frame ele anda 10*DeltaTime em direção ao alvo.
-                                    float speed = 1000.0f / (float)aimbotTimeMs;
-                                    lerpT = speed * deltaTime;
-                                    if (lerpT > 1.0f) lerpT = 1.0f;
+                            // Como o Delay (Time ms) ja passou, cravamos instantaneamente no alvo (Rage)
+                            // Nao usamos mais Slerp, apenas definimos a rotacao alvo diretamente.
+                            aimbotNewRotX = targetRot.x;
+                            aimbotNewRotY = targetRot.y;
+                            aimbotNewRotZ = targetRot.z;
+                            aimbotNewRotW = targetRot.w;
+                            
+                            // set_rotation (escreve a rotacao na camera principal)
+                            void* argsSetRot[1] = { &targetRot };
+                            Il2Cpp::runtime_invoke(setRotMethod, cameraTransform, argsSetRot, &exc);
+                            
+                            bool aimSetSuccess = false;
+                            if (setAimRotationMethod && sharedState.localPlayerObj) {
+                                bool isTrue = true;
+                                void* argsAim[2] = { &targetRot, &isTrue };
+                                Il2Cpp::runtime_invoke(setAimRotationMethod, sharedState.localPlayerObj, argsAim, &exc);
+                                if (!exc) {
+                                    aimSetSuccess = true;
                                 }
-
-                                void* argsSlerp[3] = { &camRot, &targetRot, &lerpT };
-                                void* newRotObj = Il2Cpp::runtime_invoke(slerpMethod, nullptr, argsSlerp, &exc);
-                                
-                                if (newRotObj && !exc) {
-                                    QuaternionArgs newRot = *(QuaternionArgs*)((uintptr_t)newRotObj + 0x10);
-                                    
-                                    aimbotNewRotX = newRot.x;
-                                    aimbotNewRotY = newRot.y;
-                                    aimbotNewRotZ = newRot.z;
-                                    aimbotNewRotW = newRot.w;
-                                    
-                                    // set_rotation (escreve a rotacao na camera principal)
-                                    void* argsSetRot[1] = { &newRot };
-                                    Il2Cpp::runtime_invoke(setRotMethod, cameraTransform, argsSetRot, &exc);
-                                    
-                                    bool aimSetSuccess = false;
-                                    if (setAimRotationMethod && sharedState.localPlayerObj) {
-                                        bool isTrue = true;
-                                        void* argsAim[2] = { &newRot, &isTrue };
-                                        Il2Cpp::runtime_invoke(setAimRotationMethod, sharedState.localPlayerObj, argsAim, &exc);
-                                        if (!exc) {
-                                            aimSetSuccess = true;
-                                        }
-                                    }
-                                    
-                                    if (exc) {
-                                        aimbotErrorLog = "Erro ao invocar set_rotation / SetAimRotation.";
-                                    } else {
-                                        if (aimSetSuccess) {
-                                            aimbotErrorLog = "Rotacao (Camera + Player Aim) aplicada com sucesso!";
-                                        } else {
-                                            aimbotErrorLog = "Rotacao da camera aplicada, mas falhou no Player Aim.";
-                                        }
-                                    }
-                                } else {
-                                    aimbotErrorLog = "Erro ao invocar Slerp.";
-                                }
+                            }
+                            
+                            if (exc) {
+                                aimbotErrorLog = "Erro ao invocar set_rotation / SetAimRotation.";
                             } else {
-                                aimbotErrorLog = "Erro ao obter get_rotation da Camera.";
+                                if (aimSetSuccess) {
+                                    aimbotErrorLog = "Mira cravada (Delay concluido)!";
+                                } else {
+                                    aimbotErrorLog = "Rotacao da camera aplicada, mas falhou no Player Aim.";
+                                }
                             }
                         } else {
                             aimbotErrorLog = "Erro ao invocar LookRotation.";

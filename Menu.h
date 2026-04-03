@@ -63,6 +63,10 @@ namespace GhostSystems {
         float aimbotNewRotX = 0.0f, aimbotNewRotY = 0.0f, aimbotNewRotZ = 0.0f, aimbotNewRotW = 0.0f;
         std::string aimbotErrorLog = "Nenhum erro";
 
+        // Variaveis de controle de tempo (Delay) do Aimbot
+        float aimbotDelayTimer = 0.0f;
+        bool wasAimingLastFrame = false;
+
         // Filtros Debug Player
         struct PotentialValue {
             std::string path;
