@@ -127,7 +127,7 @@ namespace GhostSystems {
         // Renderiza ESP sempre que o menu renderiza
         drawESP();
 
-        if (ImGui::Begin(OBFUSCATE("GhostSystems - Debugger de EntityList"), &isVisible, windowFlags)) {
+        if (ImGui::Begin(OBFUSCATE("GhostSystems V1.0"), &isVisible, windowFlags)) {
             
             // Logica customizada para permitir arrastar tocando no fundo da janela (Mobile amigavel)
             if (ImGui::IsWindowHovered() && ImGui::IsMouseDragging(ImGuiMouseButton_Left)) {
@@ -153,6 +153,11 @@ namespace GhostSystems {
                     ImGui::TextColored(ImVec4(0.0f, 1.0f, 0.0f, 1.0f), "Safe Aim (Com Atraso)");
                 }
                 
+                ImGui::Separator();
+                ImGui::TextColored(ImVec4(1.0f, 1.0f, 0.0f, 1.0f), "Configurações de Transição (Peito -> Cabeça)");
+                ImGui::SliderFloat(OBFUSCATE("Tempo p/ Cabeça (ms)"), &aimbotTransitionTimeMs, 100.0f, 2000.0f, "%.0f ms");
+                ImGui::SliderFloat(OBFUSCATE("Força/Curva"), &aimbotTransitionCurve, 1.0f, 5.0f, "%.1f");
+                
                 ImGui::TextColored(ImVec4(0.5f, 0.5f, 0.5f, 1.0f), "A mira foca no inimigo mais proximo do centro (FOV).");
             }
                     ImGui::EndTabItem();
@@ -162,9 +167,15 @@ namespace GhostSystems {
                     ImGui::Checkbox(OBFUSCATE("Ativar ESP"), &espEnabled);
                     if (espEnabled) {
                         ImGui::Checkbox(OBFUSCATE("ESP Box"), &espBox);
+                        if (espBox) {
+                            const char* boxModes[] = { "Box Padrao", "Outline (Contorno)" };
+                            ImGui::Combo("Modo Box", &espBoxMode, boxModes, IM_ARRAYSIZE(boxModes));
+                        }
+                        ImGui::Checkbox(OBFUSCATE("ESP Vida (Health)"), &espHealth);
                         ImGui::Checkbox(OBFUSCATE("ESP Nome"), &espName);
                         ImGui::Checkbox(OBFUSCATE("ESP Distancia"), &espDistance);
                         ImGui::Checkbox(OBFUSCATE("ESP Linha"), &espLine);
+                        ImGui::Checkbox("Esqueleto (Bones)", &espSkeleton);
                     }
                     ImGui::EndTabItem();
                 }
@@ -417,8 +428,99 @@ namespace GhostSystems {
         static void* setAimRotationMethod = nullptr;
         static void* isFiringMethod = nullptr;
         static void* getHeadTFMethod = nullptr;
+        static void* getHipTFMethod = nullptr;
+        static void* getLeftAnkleTFMethod = nullptr;
+        static void* getRightAnkleTFMethod = nullptr;
+        static void* getLeftToeTFMethod = nullptr;
+        static void* getRightToeTFMethod = nullptr;
+        static void* getComponentMethod = nullptr;
+        static void* animatorTypeObject = nullptr;
+        static void* getBoneTransformMethod = nullptr;
+        static void* getBoneByNameMethod = nullptr;
 
         static bool methodsSearched = false;
+
+        struct CachedAnimatorInfo {
+            void* animatorObj = nullptr;
+            bool hasAttempted = false;
+            std::unordered_map<int, void*> boneTransforms;
+        };
+        static std::unordered_map<void*, CachedAnimatorInfo> cachedAnimators;
+
+        // Limpa cache de entidades que nao existem mais para evitar memory leak
+        for (auto it = cachedAnimators.begin(); it != cachedAnimators.end(); ) {
+            bool found = false;
+            for (const auto& e : localEntities) {
+                if (e.obj == it->first) { found = true; break; }
+            }
+            if (!found) it = cachedAnimators.erase(it);
+            else ++it;
+        }
+
+        struct Vector3Args { float x, y, z; };
+
+        auto getBonePosCached = [](CachedAnimatorInfo* info, int boneId, bool& success) -> Vector3Args {
+            success = false;
+            Vector3Args pos = {0, 0, 0};
+            if (!info || !info->animatorObj || !getBoneTransformMethod || !getPosMethod) return pos;
+
+            void* boneTransform = nullptr;
+            auto bit = info->boneTransforms.find(boneId);
+            if (bit != info->boneTransforms.end()) {
+                boneTransform = bit->second;
+            } else {
+                void* exc = nullptr;
+                void* args[1] = { &boneId };
+                boneTransform = Il2Cpp::runtime_invoke(getBoneTransformMethod, info->animatorObj, args, &exc);
+                info->boneTransforms[boneId] = (exc == nullptr) ? boneTransform : nullptr;
+            }
+            
+            if (boneTransform) {
+                void* exc = nullptr;
+                void* posObj = Il2Cpp::runtime_invoke(getPosMethod, boneTransform, nullptr, &exc);
+                if (posObj && !exc) {
+                    pos = *(Vector3Args*)((uintptr_t)posObj + 0x10);
+                    success = true;
+                }
+            }
+            return pos;
+        };
+
+        auto getBonePos = [](void* animatorObj, int boneId, bool& success) -> Vector3Args {
+            success = false;
+            Vector3Args pos = {0, 0, 0};
+            if (!animatorObj || !getBoneTransformMethod || !getPosMethod) return pos;
+
+            void* exc = nullptr;
+            void* args[1] = { &boneId };
+            void* boneTransform = Il2Cpp::runtime_invoke(getBoneTransformMethod, animatorObj, args, &exc);
+            
+            if (boneTransform && !exc) {
+                void* posObj = Il2Cpp::runtime_invoke(getPosMethod, boneTransform, nullptr, &exc);
+                if (posObj && !exc) {
+                    pos = *(Vector3Args*)((uintptr_t)posObj + 0x10);
+                    success = true;
+                }
+            }
+            return pos;
+        };
+
+        auto getTFPos = [](void* entityObj, void* method, bool& success) -> Vector3Args {
+            success = false;
+            Vector3Args pos = {0, 0, 0};
+            if (!entityObj || !method || !getPosMethod) return pos;
+            
+            void* exc = nullptr;
+            void* tf = Il2Cpp::runtime_invoke(method, entityObj, nullptr, &exc);
+            if (tf && !exc) {
+                void* posObj = Il2Cpp::runtime_invoke(getPosMethod, tf, nullptr, &exc);
+                if (posObj && !exc) {
+                    pos = *(Vector3Args*)((uintptr_t)posObj + 0x10);
+                    success = true;
+                }
+            }
+            return pos;
+        };
 
         if (!methodsSearched) {
             void* cameraKlass = Il2Cpp::GetClass("UnityEngine.CoreModule.dll", "UnityEngine", "Camera");
@@ -448,13 +550,26 @@ namespace GhostSystems {
             methodsSearched = true;
         }
 
-        // Cache do metodo SetAimRotation no Player
-        if (!setAimRotationMethod && sharedState.localPlayerObj) {
+        // Cache do metodo SetAimRotation no Player e outros metodos dependentes do jogador
+        if ((!setAimRotationMethod || !getBoneTransformMethod) && sharedState.localPlayerObj) {
             void* playerKlass = Il2Cpp::object_get_class(sharedState.localPlayerObj);
             if (playerKlass) {
                 setAimRotationMethod = Il2Cpp::GetMethodRecursively(playerKlass, "SetAimRotation", 2);
                 isFiringMethod = Il2Cpp::GetMethodRecursively(playerKlass, "IsFiring", 0);
                 getHeadTFMethod = Il2Cpp::GetMethodRecursively(playerKlass, "GetHeadTF", 0);
+                getHipTFMethod = Il2Cpp::GetMethodRecursively(playerKlass, "GetHipTF", 0);
+                getLeftAnkleTFMethod = Il2Cpp::GetMethodRecursively(playerKlass, "GetLeftAnkleTF", 0);
+                getRightAnkleTFMethod = Il2Cpp::GetMethodRecursively(playerKlass, "GetRightAnkleTF", 0);
+                getLeftToeTFMethod = Il2Cpp::GetMethodRecursively(playerKlass, "GetLeftToeTF", 0);
+                getRightToeTFMethod = Il2Cpp::GetMethodRecursively(playerKlass, "GetRightToeTF", 0);
+                getComponentMethod = Il2Cpp::GetMethodRecursively(componentKlass, "GetComponentInChildren", 1); // GetInChildren is safer for Animator
+                getBoneByNameMethod = Il2Cpp::GetMethodRecursively(playerKlass, "GetBoneByName", 1);
+            }
+            
+            void* animatorKlass = Il2Cpp::GetClass("UnityEngine.AnimationModule.dll", "UnityEngine", "Animator");
+            if (animatorKlass) {
+                getBoneTransformMethod = Il2Cpp::GetMethodRecursively(animatorKlass, "GetBoneTransform", 1);
+                animatorTypeObject = Il2Cpp::type_get_object(Il2Cpp::class_get_type(animatorKlass));
             }
         }
 
@@ -475,13 +590,14 @@ namespace GhostSystems {
 
         if (!espEnabled && !aimbotEnabled) return;
 
-        struct Vector3Args { float x, y, z; };
         struct QuaternionArgs { float x, y, z, w; };
 
-        float closestAimbotDist = 999999.0f;
-        ImVec2 bestTargetPos(0, 0);
-        Vector3Args bestTargetWorldPos = {0, 0, 0};
+        float closestAimbotDist = FLT_MAX;
+        ImVec2 bestTargetPos = screenCenter;
+        Vector3Args bestTargetWorldPosHead = {0, 0, 0};
+        Vector3Args bestTargetWorldPosChest = {0, 0, 0};
         bool foundAimbotTarget = false;
+        void* bestTargetObj = nullptr;
 
         for (const auto& entity : localEntities) {
             // Ignora se estiver morto e o filtro de mortos estiver ativo (opcional, aqui pularemos mortos sempre pra nao poluir)
@@ -491,7 +607,7 @@ namespace GhostSystems {
             Vector3Args posFeet = {entity.position.x, entity.position.y, entity.position.z};
             
             // Tenta pegar a posicao real da cabeca pelo Transform GetHeadTF()
-            Vector3Args posHead = {entity.position.x, entity.position.y + 1.34f, entity.position.z}; // fallback caso falhe
+            Vector3Args posHead = {entity.position.x, entity.position.y + 1.41f, entity.position.z}; // fallback caso falhe
             if (getHeadTFMethod && entity.obj) {
                 void* headTransform = Il2Cpp::runtime_invoke(getHeadTFMethod, entity.obj, nullptr, &exc);
                 if (headTransform && !exc) {
@@ -538,8 +654,29 @@ namespace GhostSystems {
                     if (distToCenter <= aimbotFov && distToCenter < closestAimbotDist) {
                         closestAimbotDist = distToCenter;
                         bestTargetPos = ImVec2(xHead, yHead);
-                        bestTargetWorldPos = posHead; // Marca a cabeca como alvo em 3D
+                        bestTargetWorldPosHead = posHead;
+                        
+                        // Estimar peito
+                        float height = posHead.y - posFeet.y;
+                        bestTargetWorldPosChest = { posHead.x, posHead.y - (height * 0.2f), posHead.z };
+
+                        // Tentar obter do esqueleto (Spine = 7, Neck = 9)
+                        CachedAnimatorInfo* info = &cachedAnimators[entity.obj];
+                        if (!info->hasAttempted && animatorTypeObject) {
+                            void* exc = nullptr;
+                            void* args[1] = { animatorTypeObject };
+                            void* animObj = Il2Cpp::runtime_invoke(getComponentMethod, entity.obj, args, &exc);
+                            info->animatorObj = (!exc) ? animObj : nullptr;
+                            info->hasAttempted = true;
+                        }
+                        if (info->animatorObj) {
+                            bool successSpine = false;
+                            Vector3Args spinePos = getBonePosCached(info, 7, successSpine);
+                            if (successSpine) bestTargetWorldPosChest = spinePos;
+                        }
+                        
                         foundAimbotTarget = true;
+                        bestTargetObj = entity.obj;
                         
                         // Guarda informacoes de Debug
                         aimbotTargetName = entity.name;
@@ -550,26 +687,117 @@ namespace GhostSystems {
                 
                 if (espEnabled) {
                     if (espBox) {
-                    // Desenha o retangulo (Box ESP)
-                    drawList->AddRect(topLeft, bottomRight, color, 0.0f, 0, 1.5f);
+                        // Desenha o retangulo (Box ESP)
+                        if (espBoxMode == 0) {
+                            drawList->AddRect(topLeft, bottomRight, color, 0.0f, 0, 1.5f);
+                        } else {
+                            // Outline
+                            drawList->AddRect(ImVec2(topLeft.x - 1, topLeft.y - 1), ImVec2(bottomRight.x + 1, bottomRight.y + 1), IM_COL32(0, 0, 0, 255), 0.0f, 0, 1.5f);
+                            drawList->AddRect(ImVec2(topLeft.x + 1, topLeft.y + 1), ImVec2(bottomRight.x - 1, bottomRight.y - 1), IM_COL32(0, 0, 0, 255), 0.0f, 0, 1.5f);
+                            drawList->AddRect(topLeft, bottomRight, color, 0.0f, 0, 1.5f);
+                        }
+                    }
                     
-                    // Desenha a barra de vida ao lado (opcional, bom pra debug visual)
-                    if (entity.maxHealth > 0) {
-                        float hpPct = entity.health / entity.maxHealth;
-                        if (hpPct > 1.0f) hpPct = 1.0f;
-                        if (hpPct < 0.0f) hpPct = 0.0f;
+                    if (espHealth) {
+                        // Desenha a barra de vida ao lado
+                        if (entity.maxHealth > 0) {
+                            float hpPct = entity.health / entity.maxHealth;
+                            if (hpPct > 1.0f) hpPct = 1.0f;
+                            if (hpPct < 0.0f) hpPct = 0.0f;
 
-                        ImVec2 hpTopLeft(topLeft.x - 6.0f, yHead + (boxHeight * (1.0f - hpPct)));
-                        ImVec2 hpBottomRight(topLeft.x - 2.0f, yFeet);
+                            ImVec2 hpTopLeft(topLeft.x - 6.0f, yHead + (boxHeight * (1.0f - hpPct)));
+                            ImVec2 hpBottomRight(topLeft.x - 2.0f, yFeet);
+                            
+                            ImU32 hpColor = IM_COL32(0, 255, 0, 255);
+                            if (hpPct < 0.5f) hpColor = IM_COL32(255, 255, 0, 255);
+                            if (hpPct < 0.25f) hpColor = IM_COL32(255, 0, 0, 255);
+
+                            // Fundo da barra (preto)
+                            drawList->AddRectFilled(ImVec2(topLeft.x - 6.0f, yHead), ImVec2(topLeft.x - 2.0f, yFeet), IM_COL32(0, 0, 0, 150));
+                            // Barra de HP
+                            drawList->AddRectFilled(hpTopLeft, hpBottomRight, hpColor);
+                        }
+                    }
+
+                if (espSkeleton) {
+                    if (!entity.obj) {
+                        drawList->AddText(topLeft, IM_COL32(255, 0, 0, 255), "entity.obj == null");
+                    } else if (!getComponentMethod) {
+                        drawList->AddText(topLeft, IM_COL32(255, 0, 0, 255), "getComponentMethod == null");
+                    } else if (!animatorTypeObject) {
+                        drawList->AddText(topLeft, IM_COL32(255, 0, 0, 255), "animatorTypeObject == null");
+                    } else if (!getBoneTransformMethod) {
+                        drawList->AddText(topLeft, IM_COL32(255, 0, 0, 255), "getBoneTransformMethod == null");
+                    } else {
+                        CachedAnimatorInfo* info = &cachedAnimators[entity.obj];
+                        if (!info->hasAttempted) {
+                            void* exc = nullptr;
+                            void* args[1] = { animatorTypeObject };
+                            void* animObj = Il2Cpp::runtime_invoke(getComponentMethod, entity.obj, args, &exc);
+                            info->animatorObj = (!exc) ? animObj : nullptr;
+                            info->hasAttempted = true;
+                        }
                         
-                        ImU32 hpColor = IM_COL32(0, 255, 0, 255);
-                        if (hpPct < 0.5f) hpColor = IM_COL32(255, 255, 0, 255);
-                        if (hpPct < 0.25f) hpColor = IM_COL32(255, 0, 0, 255);
-
-                        // Fundo da barra (preto)
-                        drawList->AddRectFilled(ImVec2(topLeft.x - 6.0f, yHead), ImVec2(topLeft.x - 2.0f, yFeet), IM_COL32(0, 0, 0, 150));
-                        // Barra de HP
-                        drawList->AddRectFilled(hpTopLeft, hpBottomRight, hpColor);
+                        if (!info->animatorObj) {
+                            drawList->AddText(topLeft, IM_COL32(255, 0, 0, 255), "animatorObj == null");
+                        } else {
+                            bool hasBone[25] = {false};
+                            ImVec2 boneScreen[25];
+                            
+                            // Lista de bones que precisamos para o esqueleto basico
+                            int requiredBones[] = { 0, 1, 2, 3, 4, 5, 6, 7, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18 };
+                        
+                        for (int i = 0; i < sizeof(requiredBones) / sizeof(int); ++i) {
+                            int bId = requiredBones[i];
+                            bool success = false;
+                            Vector3Args wPos = getBonePosCached(info, bId, success);
+                            if (success) {
+                                void* args[1] = { &wPos };
+                                void* exc2 = nullptr;
+                                void* w2sObj = Il2Cpp::runtime_invoke(worldToScreenMethod, mainCamera, args, &exc2);
+                                if (w2sObj && !exc2) {
+                                    Vector3Args sPos = *(Vector3Args*)((uintptr_t)w2sObj + 0x10);
+                                    if (sPos.z > 0) {
+                                        boneScreen[bId] = ImVec2(sPos.x, screenSize.y - sPos.y);
+                                        hasBone[bId] = true;
+                                    }   
+                                }
+                            }
+                        }
+                        
+                        auto drawBoneLine = [&](int b1, int b2) {
+                            if (hasBone[b1] && hasBone[b2]) {
+                                drawList->AddLine(boneScreen[b1], boneScreen[b2], IM_COL32(255, 255, 255, 255), 1.5f);
+                            }
+                        };
+                        
+                        // Desenha Esqueleto
+                        drawBoneLine(10, 9);  // Head -> Neck
+                        drawBoneLine(9, 7);   // Neck -> Spine
+                        drawBoneLine(7, 0);   // Spine -> Hips
+                        
+                        // Bracos (Esquerdo)
+                        drawBoneLine(9, 11);  // Neck -> LeftShoulder
+                        drawBoneLine(11, 13); // LeftShoulder -> LeftUpperArm
+                        drawBoneLine(13, 15); // LeftUpperArm -> LeftLowerArm
+                        drawBoneLine(15, 17); // LeftLowerArm -> LeftHand
+                        
+                        // Bracos (Direito)
+                        drawBoneLine(9, 12);  // Neck -> RightShoulder
+                        drawBoneLine(12, 14); // RightShoulder -> RightUpperArm
+                        drawBoneLine(14, 16); // RightUpperArm -> RightLowerArm
+                        drawBoneLine(16, 18); // RightLowerArm -> RightHand
+                        
+                        // Pernas (Esquerda)
+                        drawBoneLine(0, 1);   // Hips -> LeftUpperLeg
+                        drawBoneLine(1, 3);   // LeftUpperLeg -> LeftLowerLeg
+                        drawBoneLine(3, 5);   // LeftLowerLeg -> LeftFoot
+                        
+                        // Pernas (Direita)
+                        drawBoneLine(0, 2);   // Hips -> RightUpperLeg
+                        drawBoneLine(2, 4);   // RightUpperLeg -> RightLowerLeg
+                        drawBoneLine(4, 6);   // RightLowerLeg -> RightFoot
+                        }
                     }
                 }
 
@@ -649,6 +877,15 @@ namespace GhostSystems {
 
             // APLICAR ROTAÇÃO NA CÂMERA (Aim Lock 3D)
             if (shouldAim && delayPassed && getTransformMethod && getPosMethod && getRotMethod && setRotMethod && lookRotMethod) {
+                // Atualizar timer do alvo atual
+                aimbotTargetTimeMap[bestTargetObj] += deltaTime * 1000.0f; // ms
+                
+                // Limpar timers antigos
+                for (auto it = aimbotTargetTimeMap.begin(); it != aimbotTargetTimeMap.end(); ) {
+                    if (it->first != bestTargetObj) it = aimbotTargetTimeMap.erase(it);
+                    else ++it;
+                }
+
                 void* cameraTransform = Il2Cpp::runtime_invoke(getTransformMethod, mainCamera, nullptr, &exc);
                 if (cameraTransform && !exc) {
                     void* camPosObj = Il2Cpp::runtime_invoke(getPosMethod, cameraTransform, nullptr, &exc);
@@ -659,8 +896,26 @@ namespace GhostSystems {
                         aimbotCamPosY = camPos.y;
                         aimbotCamPosZ = camPos.z;
 
-                        // Vetor direcional para o alvo (Cabeca)
-                        Vector3Args dir = { bestTargetWorldPos.x - camPos.x, bestTargetWorldPos.y - camPos.y, bestTargetWorldPos.z - camPos.z };
+                        // Calcular interpolacao Peito -> Cabeca
+                        float timeOnTarget = aimbotTargetTimeMap[bestTargetObj];
+                        float t = 0.0f;
+                        if (aimbotTransitionTimeMs > 0.0f) {
+                            t = timeOnTarget / aimbotTransitionTimeMs;
+                            if (t > 1.0f) t = 1.0f;
+                            // Aplicar curva de aceleracao agressiva
+                            t = pow(t, aimbotTransitionCurve);
+                        } else {
+                            t = 1.0f; // Direto na cabeca se o tempo for 0
+                        }
+
+                        Vector3Args currentTargetPos = {
+                            bestTargetWorldPosChest.x + (bestTargetWorldPosHead.x - bestTargetWorldPosChest.x) * t,
+                            bestTargetWorldPosChest.y + (bestTargetWorldPosHead.y - bestTargetWorldPosChest.y) * t,
+                            bestTargetWorldPosChest.z + (bestTargetWorldPosHead.z - bestTargetWorldPosChest.z) * t
+                        };
+
+                        // Vetor direcional para o alvo (Cabeca ou Peito dependendo do t)
+                        Vector3Args dir = { currentTargetPos.x - camPos.x, currentTargetPos.y - camPos.y, currentTargetPos.z - camPos.z };
                         
                         // LookRotation
                         void* argsRot[1] = { &dir };

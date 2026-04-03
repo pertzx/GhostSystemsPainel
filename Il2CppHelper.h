@@ -29,6 +29,10 @@ typedef void* (*il2cpp_class_get_parent_t)(void* klass);
 typedef void* (*il2cpp_thread_attach_t)(void* domain);
 typedef void (*il2cpp_thread_detach_t)(void* thread);
 
+typedef void* (*il2cpp_class_get_type_t)(void* klass);
+typedef void* (*il2cpp_type_get_object_t)(const void* type);
+typedef void* (*il2cpp_string_new_t)(const char* str);
+
 namespace Il2Cpp {
     inline il2cpp_domain_get_t domain_get = nullptr;
     inline il2cpp_domain_get_assemblies_t domain_get_assemblies = nullptr;
@@ -54,6 +58,10 @@ namespace Il2Cpp {
     inline il2cpp_class_get_array_element_size_t class_get_array_element_size = nullptr;
     inline il2cpp_thread_attach_t thread_attach = nullptr;
     inline il2cpp_thread_detach_t thread_detach = nullptr;
+
+    inline il2cpp_class_get_type_t class_get_type = nullptr;
+    inline il2cpp_type_get_object_t type_get_object = nullptr;
+    inline il2cpp_string_new_t string_new = nullptr;
 
     inline bool Initialize() {
         void* handle = dlopen("libil2cpp.so", RTLD_LAZY);
@@ -83,6 +91,9 @@ namespace Il2Cpp {
         class_get_array_element_size = (il2cpp_class_get_array_element_size_t)dlsym(handle, "il2cpp_class_get_array_element_size");
         thread_attach = (il2cpp_thread_attach_t)dlsym(handle, "il2cpp_thread_attach");
         thread_detach = (il2cpp_thread_detach_t)dlsym(handle, "il2cpp_thread_detach");
+        class_get_type = (il2cpp_class_get_type_t)dlsym(handle, "il2cpp_class_get_type");
+        type_get_object = (il2cpp_type_get_object_t)dlsym(handle, "il2cpp_type_get_object");
+        string_new = (il2cpp_string_new_t)dlsym(handle, "il2cpp_string_new");
 
         return domain_get != nullptr;
     }

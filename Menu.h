@@ -39,18 +39,24 @@ namespace GhostSystems {
 
         // Configurações de ESP
         bool espEnabled = true;
-        bool espBox = true;
+        bool espBox = false;
+        int espBoxMode = 1; // 0 = Box Padrão (Sólida), 1 = Outline (Contorno)
         bool espName = true;
         bool espDistance = true;
+        bool espHealth = true;
         bool espLine = true;
-
+        bool espSkeleton = false;
+        
         // Configurações de Aimbot
         bool aimbotEnabled = true;
-        int aimbotMode = 1; // 0 = Tradicional (Ao Atirar), 1 = Aimlock (Sempre)
+        int aimbotMode = 0; // 0 = Tradicional (Ao Atirar), 1 = Aimlock (Sempre)
         bool aimbotDrawFov = true;
         bool aimbotTargetAllies = true;
         float aimbotFov = 200.0f;
         int aimbotTimeMs = 100; // Tempo em milissegundos para puxar a mira
+        float aimbotTransitionTimeMs = 500.0f; // Tempo para transição para a cabeça
+        float aimbotTransitionCurve = 2.0f; // Curva de aceleração
+        std::unordered_map<void*, float> aimbotTargetTimeMap; // Guarda o tempo de foco por entidade
 
         // Variaveis de Debug Aimbot
         bool aimbotHasTarget = false;
