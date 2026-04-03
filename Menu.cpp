@@ -187,6 +187,10 @@ namespace GhostSystems {
                         ImGui::Checkbox(OBFUSCATE("ESP Distancia"), &espDistance);
                         ImGui::Checkbox(OBFUSCATE("ESP Linha"), &espLine);
                         ImGui::Checkbox("Esqueleto (Bones)", &espSkeleton);
+                        
+                        ImGui::Separator();
+                        ImGui::TextColored(ImVec4(1.0f, 1.0f, 0.0f, 1.0f), "Filtro de Distancia ESP");
+                        ImGui::SliderFloat(OBFUSCATE("Maxima"), &espMaxDistance, 10.0f, 300.0f, "%.0f m");
                     }
                     ImGui::EndTabItem();
                 }
@@ -621,6 +625,21 @@ namespace GhostSystems {
         for (const auto& entity : localEntities) {
             // Ignora se estiver morto e o filtro de mortos estiver ativo (opcional, aqui pularemos mortos sempre pra nao poluir)
             if (!entity.isAlive()) continue;
+            
+            // Calcula a distância 3D entre o jogador local e a entidade
+            float distance3D = 0.0f;
+            if (sharedState.localPlayerObj) {
+                void* localTransform = Il2Cpp::runtime_invoke(getTransformMethod, sharedState.localPlayerObj, nullptr, &exc);
+                if (localTransform && !exc) {
+                    void* localPosObj = Il2Cpp::runtime_invoke(getPosMethod, localTransform, nullptr, &exc);
+                    if (localPosObj && !exc) {
+                        Vector3Args localPos = *(Vector3Args*)((uintptr_t)localPosObj + 0x10);
+                        distance3D = sqrt(pow(entity.position.x - localPos.x, 2) + 
+                                          pow(entity.position.y - localPos.y, 2) + 
+                                          pow(entity.position.z - localPos.z, 2));
+                    }
+                }
+            }
 
             // Box positions (pés até a cabeça)
             Vector3Args posFeet = {entity.position.x, entity.position.y, entity.position.z};
@@ -647,6 +666,11 @@ namespace GhostSystems {
             void* w2sHeadObj = Il2Cpp::runtime_invoke(worldToScreenMethod, mainCamera, argsHead, &exc);
             if (!w2sHeadObj || exc) continue;
             Vector3Args w2sHead = *(Vector3Args*)((uintptr_t)w2sHeadObj + 0x10);
+
+            // Filtro de Distância (Impede ESP e Aimbot de bugar a tela em inimigos muito longe)
+            if (distance3D > espMaxDistance) {
+                continue;
+            }
 
             // Verifica se esta na frente da camera (Z > 0.0f)
             if (w2sFeet.z > 0.0f) {
