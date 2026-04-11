@@ -24,17 +24,17 @@ namespace GhostSystems {
     };
 
     struct PlayerEntity {
-        uintptr_t baseAddress;
-        char name[64];
-        float health;
-        float maxHealth;
-        Vector3 position;
-        bool isBot;
-        bool isKnocked;
-        int teamId;
-        float distanceToLocal;
-        Alignment alignment;
-        void* obj; // Ponteiro Il2Cpp do jogador
+        uintptr_t baseAddress = 0;
+        char name[64] = {0};
+        float health = 0.0f;
+        float maxHealth = 100.0f;
+        Vector3 position = {0, 0, 0};
+        bool isBot = false;
+        bool isKnocked = false;
+        int teamId = 0;
+        float distanceToLocal = 0.0f;
+        Alignment alignment = Alignment::ENEMY;
+        void* obj = nullptr; // Ponteiro Il2Cpp do jogador
         
         bool isAlive() const { return health > 0.0f; }
         float getHealthPercentage() const { return (health / maxHealth) * 100.0f; }

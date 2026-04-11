@@ -11,6 +11,7 @@ namespace GhostSystems {
     public:
         Menu(GameState& state) : sharedState(state) {
             initStyle();
+            loadUserInfo();
         }
 
         void render();
@@ -19,6 +20,7 @@ namespace GhostSystems {
 
     private:
         void initStyle();
+        void loadUserInfo();
         void drawEntityList();
         void drawFilters();
         void drawDebugPlayer();
@@ -34,35 +36,51 @@ namespace GhostSystems {
         // Master Switch
         bool masterSwitch = false;
 
+        // Login System
+        bool isLogged = true;
+
+        // User Info
+        std::string userName = "GhostSystems User";
+        std::string userPlan = "Premium";
+        long long userTimeLeft = 0;
+        long long userExpireAt = -1;
+
         // Filtros da UI
         bool filterAliveOnly = true;
         bool filterHumansOnly = false;
-        float maxDistanceFilter = 1000.0f;
+        float maxDistanceFilter = 100.0f;
         int filterTeamId = -1; // -1 significa sem filtro
 
         // Configurações de ESP
         bool espEnabled = true;
-        bool espBox = false;
-        int espBoxMode = 1; // 0 = Box Padrão (Sólida), 1 = Outline (Contorno)
+        bool espBox = true;
+        int espBoxStyle = 1; // 0 = Box Completa, 1 = Box Cantos (Corners)
+        float espColorEnemy[4] = {1.0f, 1.0f, 1.0f, 1.0f}; // Branco
+        float espColorAlly[4] = {1.0f, 1.0f, 1.0f, 1.0f}; // Branco
+        float fovColor[4] = {1.0f, 1.0f, 1.0f, 1.0f}; // Branco
         bool espName = true;
         bool espDistance = true;
         bool espHealth = true;
         bool espLine = true;
         bool espSkeleton = false;
-        float espMaxDistance = 200.0f;
+        float espMaxDistance = 100.0f;
         
         // Configurações de Aimbot
         bool aimbotEnabled = true;
         int aimbotMode = 0; // 0 = Tradicional (Ao Atirar), 1 = Aimlock (Sempre)
         bool aimbotDrawFov = true;
         bool aimbotTargetAllies = true;
-        float aimbotFov = 200.0f;
-        int aimbotTimeMs = 0; // Tempo em milissegundos para puxar a mira
-        float aimbotTransitionTimeMs = 150.0f; // Tempo para transição para a cabeça (Rage < 50, Safe > 50)
-        float aimbotTransitionCurve = 2.0f; // Curva de aceleração
-        bool aimbotVisibilityCheck = true; // Só puxa se o player estiver visível
-        bool aimbotMagnetic = false; // Mira Magnética (Puxa o inimigo pra frente da mira)
-        std::unordered_map<void*, float> aimbotTargetTimeMap; // Guarda o tempo de foco por entidade
+float aimbotFov = 200.0f;
+bool aimbotVisibilityCheck = true; // Só puxa se o player estiver visível
+bool aimbotMagnetic = false; // Mira Magnética (Puxa o inimigo pra frente da mira)
+int aimbotHitbox = 0; // 0 = Cabeça, 1 = Pescoço, 2 = Peito
+
+// Lógica de Smooth e Força (Aimbot Delay)
+float aimbotPullStrength = 1.5f; // Força base do aimbot (aumentada pra ficar mais forte)
+float aimbotSmoothTimeMs = 30.0f; // Tempo de transição peito -> alvo configurado (Valor inicial forte/baixo)
+float aimbotSmoothCurve = 3.0f; // Curva de aceleração da puxada
+
+std::unordered_map<void*, float> aimbotTargetTimeMap; // Guarda o tempo de foco por entidade
 
         // Variaveis de Debug Aimbot
         bool aimbotHasTarget = false;
@@ -93,6 +111,19 @@ namespace GhostSystems {
         char searchFilter[64] = "";
         bool filterOnlyFloats = false;
         bool filterOnlyInts = false;
+
+        // Configurações de Misc
+        bool infJumpEnabled = false;
+        float infJumpStep = 2.0f;
+
+        // Configurações de Silent Aim
+        bool silentAimEnabled = false;
+        int silentAimApproach = 0; // 0=Hook GetFireDirection, 1=Hook StartFiring, 2=Hook LookAtPosition, 3=Hook GetLookDirection, 4=Raycast Predicition, 5=Modificar Rotacao
+        bool silentAimDrawDebug = false;
+        float silentAimSmooth = 0.1f; // Suavização do silent aim
+        bool silentAimFovCheck = true; // Verificar FOV antes de aplicar
+        float silentAimMaxDistance = 300.0f; // Distância máxima do silent aim
+        std::string silentAimStatus = "Inativo";
 
         void scanForPotentialValues(void* obj, void* klass, const std::string& path, int depth, std::unordered_set<void*>& visited);
     };

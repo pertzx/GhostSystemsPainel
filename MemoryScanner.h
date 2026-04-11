@@ -167,11 +167,32 @@ namespace GhostSystems {
                                         static void* isAIMethod = nullptr;
                                         static void* getPosMethod = nullptr;
                                         static void* getTeamMethod = nullptr;
+                                        static void* teamField = nullptr;
                                         static void* getIsDeadMethod = nullptr;
                                         static void* isLocalMethod = nullptr;
+                                        static void* isLocalField = nullptr;
+                                        static void* getLocalPlayerMethod = nullptr;
                                         static bool methodsCached = false;
 
+                                        static void* gameFacadeKlass = Il2Cpp::GetClass("Assembly-CSharp.dll", "COW", "GameFacade");
+                                        static void* currentLocalPlayerMethod = nullptr;
+                                        static void* isSameTeamMethod = nullptr;
+
+                                        if (gameFacadeKlass && !currentLocalPlayerMethod) {
+                                            currentLocalPlayerMethod = Il2Cpp::GetMethodRecursively(gameFacadeKlass, "CurrentLocalPlayer", 0);
+                                            isSameTeamMethod = Il2Cpp::GetMethodRecursively(gameFacadeKlass, "IsSameTeam", 2);
+                                        }
+
+                                        uintptr_t localPlayerObj = 0;
+                                        if (currentLocalPlayerMethod) {
+                                            localPlayerObj = (uintptr_t)Il2Cpp::runtime_invoke(currentLocalPlayerMethod, nullptr, nullptr, nullptr);
+                                        }
+
                                         if (!methodsCached) {
+                                            getLocalPlayerMethod = Il2Cpp::GetMethodRecursively(entityKlass, "get_localPlayer", 0);
+                                            if (!getLocalPlayerMethod) getLocalPlayerMethod = Il2Cpp::GetMethodRecursively(entityKlass, "get_LocalPlayer", 0);
+                                            if (!getLocalPlayerMethod) getLocalPlayerMethod = Il2Cpp::GetMethodRecursively(entityKlass, "get_local", 0);
+
                                             getNickNameMethod = Il2Cpp::GetMethodRecursively(entityKlass, "GetNickName", 0);
                                             if (!getNickNameMethod) getNickNameMethod = Il2Cpp::GetMethodRecursively(entityKlass, "get_NickName", 0);
                                             if (!getNickNameMethod) getNickNameMethod = Il2Cpp::GetMethodRecursively(entityKlass, "get_Nickname", 0);
@@ -182,14 +203,56 @@ namespace GhostSystems {
                                             if (!isAIMethod) isAIMethod = Il2Cpp::GetMethodRecursively(entityKlass, "get_isBot", 0);
 
                                             getPosMethod = Il2Cpp::GetMethodRecursively(entityKlass, "get_Position", 0);
-                                            getTeamMethod = Il2Cpp::GetMethodRecursively(entityKlass, "get_TeamID", 0);
+                                            getTeamMethod = Il2Cpp::GetMethodRecursively(entityKlass, "get_Camp", 0);
+                                            if (!getTeamMethod) getTeamMethod = Il2Cpp::GetMethodRecursively(entityKlass, "get_camp", 0);
+                                            if (!getTeamMethod) getTeamMethod = Il2Cpp::GetMethodRecursively(entityKlass, "get_GroupId", 0);
+                                            if (!getTeamMethod) getTeamMethod = Il2Cpp::GetMethodRecursively(entityKlass, "get_TeamID", 0);
+                                            if (!getTeamMethod) getTeamMethod = Il2Cpp::GetMethodRecursively(entityKlass, "get_TeamId", 0);
+                                            if (!getTeamMethod) getTeamMethod = Il2Cpp::GetMethodRecursively(entityKlass, "get_teamId", 0);
+                                            if (!getTeamMethod) getTeamMethod = Il2Cpp::GetMethodRecursively(entityKlass, "get_Team", 0);
+
+                                            if (!getTeamMethod) teamField = Il2Cpp::GetFieldRecursively(entityKlass, "camp");
+                                            if (!getTeamMethod && !teamField) teamField = Il2Cpp::GetFieldRecursively(entityKlass, "Camp");
+                                            if (!getTeamMethod && !teamField) teamField = Il2Cpp::GetFieldRecursively(entityKlass, "groupId");
+                                            if (!getTeamMethod && !teamField) teamField = Il2Cpp::GetFieldRecursively(entityKlass, "GroupId");
+                                            if (!getTeamMethod && !teamField) teamField = Il2Cpp::GetFieldRecursively(entityKlass, "teamId");
+                                            if (!getTeamMethod && !teamField) teamField = Il2Cpp::GetFieldRecursively(entityKlass, "TeamId");
+                                            if (!getTeamMethod && !teamField) teamField = Il2Cpp::GetFieldRecursively(entityKlass, "TeamID");
+                                            if (!getTeamMethod && !teamField) teamField = Il2Cpp::GetFieldRecursively(entityKlass, "team");
+                                            if (!getTeamMethod && !teamField) teamField = Il2Cpp::GetFieldRecursively(entityKlass, "Team");
+                                            if (!getTeamMethod && !teamField) teamField = Il2Cpp::GetFieldRecursively(entityKlass, "m_TeamId");
+                                            if (!getTeamMethod && !teamField) teamField = Il2Cpp::GetFieldRecursively(entityKlass, "m_GroupId");
+                                            if (!getTeamMethod && !teamField) teamField = Il2Cpp::GetFieldRecursively(entityKlass, "m_Camp");
+                                            if (!getTeamMethod && !teamField) teamField = Il2Cpp::GetFieldRecursively(entityKlass, "_teamId");
+                                            if (!getTeamMethod && !teamField) teamField = Il2Cpp::GetFieldRecursively(entityKlass, "_camp");
+
                                             getIsDeadMethod = Il2Cpp::GetMethodRecursively(entityKlass, "get_IsDead", 0);
 
-                                            isLocalMethod = Il2Cpp::GetMethodRecursively(entityKlass, "IsLocalPlayer", 0);
-                                            if (!isLocalMethod) isLocalMethod = Il2Cpp::GetMethodRecursively(entityKlass, "IsLocalEntity", 0);
-                                            if (!isLocalMethod) isLocalMethod = Il2Cpp::GetMethodRecursively(entityKlass, "get_IsLocal", 0);
+                                            isLocalMethod = Il2Cpp::GetMethodRecursively(entityKlass, "get_IsMainPlayer", 0);
+                                            if (!isLocalMethod) isLocalMethod = Il2Cpp::GetMethodRecursively(entityKlass, "IsMainPlayer", 0);
                                             if (!isLocalMethod) isLocalMethod = Il2Cpp::GetMethodRecursively(entityKlass, "get_IsLocalPlayer", 0);
-                                            if (!isLocalMethod) isLocalMethod = Il2Cpp::GetMethodRecursively(entityKlass, "IsLocalAvatar", 0);
+                                            if (!isLocalMethod) isLocalMethod = Il2Cpp::GetMethodRecursively(entityKlass, "IsLocalPlayer", 0);
+                                            if (!isLocalMethod) isLocalMethod = Il2Cpp::GetMethodRecursively(entityKlass, "get_isLocalPlayer", 0);
+                                            if (!isLocalMethod) isLocalMethod = Il2Cpp::GetMethodRecursively(entityKlass, "isLocalPlayer", 0);
+                                            if (!isLocalMethod) isLocalMethod = Il2Cpp::GetMethodRecursively(entityKlass, "get_IsLocal", 0);
+                                            if (!isLocalMethod) isLocalMethod = Il2Cpp::GetMethodRecursively(entityKlass, "IsLocal", 0);
+                                            if (!isLocalMethod) isLocalMethod = Il2Cpp::GetMethodRecursively(entityKlass, "get_isLocal", 0);
+
+                                            if (!isLocalMethod) isLocalField = Il2Cpp::GetFieldRecursively(entityKlass, "isMainPlayer");
+                                            if (!isLocalMethod && !isLocalField) isLocalField = Il2Cpp::GetFieldRecursively(entityKlass, "IsMainPlayer");
+                                            if (!isLocalMethod && !isLocalField) isLocalField = Il2Cpp::GetFieldRecursively(entityKlass, "isLocalPlayer");
+                                            if (!isLocalMethod && !isLocalField) isLocalField = Il2Cpp::GetFieldRecursively(entityKlass, "IsLocalPlayer");
+                                            if (!isLocalMethod && !isLocalField) isLocalField = Il2Cpp::GetFieldRecursively(entityKlass, "isLocal");
+                                            if (!isLocalMethod && !isLocalField) isLocalField = Il2Cpp::GetFieldRecursively(entityKlass, "IsLocal");
+                                            if (!isLocalMethod && !isLocalField) isLocalField = Il2Cpp::GetFieldRecursively(entityKlass, "m_IsLocalPlayer");
+                                            if (!isLocalMethod && !isLocalField) isLocalField = Il2Cpp::GetFieldRecursively(entityKlass, "m_isLocalPlayer");
+                                            if (!isLocalMethod && !isLocalField) isLocalField = Il2Cpp::GetFieldRecursively(entityKlass, "m_IsMainPlayer");
+                                            if (!isLocalMethod && !isLocalField) isLocalField = Il2Cpp::GetFieldRecursively(entityKlass, "m_IsLocal");
+                                            if (!isLocalMethod && !isLocalField) isLocalField = Il2Cpp::GetFieldRecursively(entityKlass, "_isLocal");
+
+                                            if (!getLocalPlayerMethod) getLocalPlayerMethod = Il2Cpp::GetMethodRecursively(entityKlass, "get_localPlayer", 0);
+                                            if (!getLocalPlayerMethod) getLocalPlayerMethod = Il2Cpp::GetMethodRecursively(entityKlass, "get_LocalPlayer", 0);
+                                            if (!getLocalPlayerMethod) getLocalPlayerMethod = Il2Cpp::GetMethodRecursively(entityKlass, "GetLocalPlayer", 0);
 
                                             methodsCached = true;
                                         }
@@ -229,10 +292,10 @@ namespace GhostSystems {
                                             void* aiObj = Il2Cpp::runtime_invoke(isAIMethod, entityObj, nullptr, nullptr);
                                             if (aiObj) p.isBot = *(bool*)((uintptr_t)aiObj + 0x10);
                                         } else {
-                                             // Fallback offset - isAI na classe Player ou similar (ex: 0x40 em EPPlayerInfo ou isBot 0x38/0x20)
-                                             bool possibleBot = *(bool*)((uintptr_t)entityObj + 0x38); // Tenta IsBot; // 0x38
+                                             // Fallback offset - isAI na classe Player (IsClientBot 0x448 no novo dump)
+                                             bool possibleBot = *(bool*)((uintptr_t)entityObj + 0x448); // Tenta IsClientBot; // 0x448
                                              p.isBot = possibleBot;
-                                             // Outro offset comum: isBot; // 0x20 
+                                             // Outro offset comum: isBot; // 0x20
                                         }
 
                                         // Cache de classes e métodos para evitar lag massivo que trava o touch (runtime_invoke e GetMethodRecursively sao pesados num loop)
@@ -240,6 +303,7 @@ namespace GhostSystems {
                                         
                                         // HP e MaxHP (Tenta getter direto, se falhar, tenta via PlayerAttributes)
                                         bool hpFound = false;
+                                        void* playerAttrObj = nullptr;
                                         static void* getCurHpMethod = nullptr;
                                         static void* getMaxHpMethod = nullptr;
                                         static bool hpMethodsSearched = false;
@@ -268,11 +332,10 @@ namespace GhostSystems {
 
                                         if (!hpFound) {
                                             // Fallback para PlayerAttributes
-                                            // Em dump.cs, `protected PlayerAttributes JKPFFNEMJIF; // 0x688`
-                                            // Como os offsets podem mudar, procuramos o campo pelo tipo ou assumimos 0x688 por enquanto.
+                                            // Em dump.cs, `protected PlayerAttributes JKPFFNEMJIF; // 0x708`
+                                            // Como os offsets podem mudar, procuramos o campo pelo tipo ou assumimos 0x708 por enquanto.
                                             void* playerAttrField = Il2Cpp::class_get_field_from_name(entityKlass, "JKPFFNEMJIF");
                                             if (playerAttrField) {
-                                                void* playerAttrObj = nullptr;
                                                 Il2Cpp::field_get_value(entityObj, playerAttrField, &playerAttrObj);
                                                 if (playerAttrObj) {
                                                     void* attrKlass = Il2Cpp::object_get_class(playerAttrObj);
@@ -288,10 +351,10 @@ namespace GhostSystems {
                                                             }
                                                         } else {
                                                             // Se nao tem get_HP(), tentar pegar o campo HP direto do PlayerAttributes
-                                                            // A classe tem campos como: private Int32 LGEAIKPHPED; // 0x9c (provavel HP max/cur)
-                                                            // private Int32 CHPNMIKDJNB; // 0xa0
-                                                            int32_t possibleHp = *(int32_t*)((uintptr_t)playerAttrObj + 0x9c);
-                                                            int32_t possibleHp2 = *(int32_t*)((uintptr_t)playerAttrObj + 0xa0); // Try the other one too
+                                                            // A classe tem campos como: private Int32 LGEAIKPHPED; // 0xa4 (provavel HP max/cur)
+                                                            // private Int32 CHPNMIKDJNB; // 0xa8
+                                                            int32_t possibleHp = *(int32_t*)((uintptr_t)playerAttrObj + 0xa4);
+                                                            int32_t possibleHp2 = *(int32_t*)((uintptr_t)playerAttrObj + 0xa8); // Try the other one too
 
                                                             if (possibleHp > 1 && possibleHp <= 300) {
                                                                 p.health = (float)possibleHp;
@@ -311,8 +374,8 @@ namespace GhostSystems {
                                             } 
                                             
                                             if (!hpFound) {
-                                                // Fallback hardcoded para offset 0x688 caso o campo nao seja JKPFFNEMJIF
-                                                void* playerAttrObj = *(void**)((uintptr_t)entityObj + 0x688);
+                                                // Fallback hardcoded para offset 0x708 caso o campo nao seja JKPFFNEMJIF
+                                                playerAttrObj = *(void**)((uintptr_t)entityObj + 0x708);
                                                 if (playerAttrObj) {
                                                     void* attrKlass = Il2Cpp::object_get_class(playerAttrObj);
                                                     if (attrKlass) {
@@ -326,8 +389,8 @@ namespace GhostSystems {
                                                                 }
                                                             }
                                                         } else {
-                                                            int32_t possibleHp = *(int32_t*)((uintptr_t)playerAttrObj + 0x9c);
-                                                            int32_t possibleHp2 = *(int32_t*)((uintptr_t)playerAttrObj + 0xa0);
+                                                            int32_t possibleHp = *(int32_t*)((uintptr_t)playerAttrObj + 0xa4);
+                                                            int32_t possibleHp2 = *(int32_t*)((uintptr_t)playerAttrObj + 0xa8);
                                                             
                                                             if (possibleHp > 1 && possibleHp <= 300) {
                                                                 p.health = (float)possibleHp;
@@ -383,16 +446,6 @@ namespace GhostSystems {
                                             // Fallback offset posição, se existir. Vamos deixar vazio por enquanto.
                                         }
 
-                                        if (getTeamMethod) {
-                                            void* teamObj = Il2Cpp::runtime_invoke(getTeamMethod, entityObj, nullptr, nullptr);
-                                            if (teamObj) {
-                                                // Pode ser Byte ou Int32 dependendo da versão, lendo Int32 por segurança e fazendo cast.
-                                                // Se for byte o padding pode zerar os outros 3 bytes, mas é mais seguro ler 1 byte e dps ver.
-                                                // No dump.cs tem `public Int32 get_TeamID()` e `public Byte get_TeamID()`.
-                                                p.teamId = (int)(*(uint8_t*)((uintptr_t)teamObj + 0x10)); 
-                                            }
-                                        }
-
                                         // Salva o ponteiro do objeto
                                         p.obj = entityObj;
 
@@ -403,12 +456,85 @@ namespace GhostSystems {
 
                                         // Verificar IsLocalPlayer para ignorar ou destacar o jogador local
                                         bool isLocal = false;
-                                        if (isLocalMethod) {
-                                            void* isLocalObj = Il2Cpp::runtime_invoke(isLocalMethod, entityObj, nullptr, nullptr);
-                                            if (isLocalObj) {
-                                                isLocal = *(bool*)((uintptr_t)isLocalObj + 0x10);
+                                        if (localPlayerObj != 0 && (uintptr_t)entityObj == localPlayerObj) {
+                                            isLocal = true;
+                                        } else {
+                                            if (isLocalMethod) {
+                                                void* isLocalObj = Il2Cpp::runtime_invoke(isLocalMethod, entityObj, nullptr, nullptr);
+                                                if (isLocalObj) {
+                                                    isLocal = *(bool*)((uintptr_t)isLocalObj + 0x10);
+                                                }
+                                            } else if (isLocalField) {
+                                                Il2Cpp::field_get_value(entityObj, isLocalField, &isLocal);
+                                            }
+                                            
+                                            if (!isLocal && getLocalPlayerMethod) {
+                                                void* lpObj = Il2Cpp::runtime_invoke(getLocalPlayerMethod, nullptr, nullptr, nullptr);
+                                                if (lpObj && lpObj == entityObj) {
+                                                    isLocal = true;
+                                                }
                                             }
                                         }
+
+                                        // Set alignment via IsSameTeam se tivermos o localPlayerObj
+                                        if (isLocal) {
+                                            p.alignment = Alignment::ALLY;
+                                        } else {
+                                            if (localPlayerObj != 0 && isSameTeamMethod) {
+                                                void* params[2] = { (void*)localPlayerObj, entityObj };
+                                                void* sameTeamObj = Il2Cpp::runtime_invoke(isSameTeamMethod, nullptr, params, nullptr);
+                                                if (sameTeamObj) {
+                                                    bool sameTeam = *(bool*)((uintptr_t)sameTeamObj + 0x10);
+                                                    if (sameTeam) {
+                                                        p.alignment = Alignment::ALLY;
+                                                    } else {
+                                                        p.alignment = Alignment::ENEMY;
+                                                    }
+                                                } else {
+                                                    p.alignment = Alignment::ENEMY;
+                                                }
+                                            } else {
+                                                p.alignment = Alignment::ENEMY; // Fallback
+                                            }
+                                        }
+
+                                        // Tenta ler teamId pra debug
+                                        if (getTeamMethod) {
+                                            void* teamObj = Il2Cpp::runtime_invoke(getTeamMethod, entityObj, nullptr, nullptr);
+                                            if (teamObj) {
+                                                void* teamKlass = Il2Cpp::object_get_class(teamObj);
+                                                const char* teamKlassName = teamKlass ? Il2Cpp::class_get_name(teamKlass) : "";
+                                                if (teamKlassName && strcmp(teamKlassName, "Byte") == 0) {
+                                                    p.teamId = *(uint8_t*)((uintptr_t)teamObj + 0x10);
+                                                } else if (teamKlassName && strcmp(teamKlassName, "SByte") == 0) {
+                                                    p.teamId = *(int8_t*)((uintptr_t)teamObj + 0x10);
+                                                } else if (teamKlassName && strcmp(teamKlassName, "Int16") == 0) {
+                                                    p.teamId = *(int16_t*)((uintptr_t)teamObj + 0x10);
+                                                } else {
+                                                    p.teamId = *(int32_t*)((uintptr_t)teamObj + 0x10);
+                                                }
+                                            }
+                                        } else if (teamField) {
+                                            p.teamId = 0; // zera os 4 bytes para evitar lixo se o campo for byte
+                                            Il2Cpp::field_get_value(entityObj, teamField, &p.teamId);
+                                        } else if (playerAttrObj) {
+                                            // Fallback: Check PlayerAttributes for teamId
+                                            void* attrKlass = Il2Cpp::object_get_class(playerAttrObj);
+                                            if (attrKlass) {
+                                                void* attrTeamField = Il2Cpp::GetFieldRecursively(attrKlass, "camp");
+                                                if (!attrTeamField) attrTeamField = Il2Cpp::GetFieldRecursively(attrKlass, "teamId");
+                                                if (!attrTeamField) attrTeamField = Il2Cpp::GetFieldRecursively(attrKlass, "groupId");
+                                                if (attrTeamField) {
+                                                    Il2Cpp::field_get_value(playerAttrObj, attrTeamField, &p.teamId);
+                                                }
+                                            }
+                                        }
+
+                                        // Debug name append
+                                        char debugName[256];
+                                        snprintf(debugName, sizeof(debugName), "%s T:%d L:%d", p.name, p.teamId, isLocal ? 1 : 0);
+                                        strncpy(p.name, debugName, sizeof(p.name) - 1);
+                                        p.name[sizeof(p.name) - 1] = '\0';
 
                                         if (isLocal) {
                                             foundLocal = true;
@@ -429,11 +555,20 @@ namespace GhostSystems {
                 if (foundLocal) {
                     for (auto& p : updatedEntities) {
                         p.distanceToLocal = p.position.distance(currentLocalPos);
-                        if (p.teamId == currentLocalTeamId) {
-                            p.alignment = Alignment::ALLY;
-                        } else {
-                            p.alignment = Alignment::ENEMY;
+                        // Only fallback to teamId if alignment was not already set to ALLY by IsSameTeam
+                        if (p.alignment != Alignment::ALLY) {
+                            if (p.teamId == currentLocalTeamId && p.teamId != 0) {
+                                p.alignment = Alignment::ALLY;
+                            } else {
+                                p.alignment = Alignment::ENEMY;
+                            }
                         }
+                    }
+                } else {
+                    // Fallback se não achar o jogador local: 
+                    // Tenta adivinhar baseado na menor distância (se tivéssemos a câmera) ou apenas calcula distância mútua
+                    for (auto& p : updatedEntities) {
+                        p.alignment = Alignment::ENEMY;
                     }
                 }
 
