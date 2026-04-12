@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Entity.h"
+#include "Obfuscator.h"
 #include <unordered_map>
 #include <unordered_set>
 #include <string>
@@ -10,6 +11,7 @@ namespace GhostSystems {
     class Menu {
     public:
         Menu(GameState& state) : sharedState(state) {
+            menuInstance = this;
             initStyle();
             loadUserInfo();
         }
@@ -17,6 +19,34 @@ namespace GhostSystems {
         void render();
         void setVisible(bool visible) { isVisible = visible; }
         bool getVisible() const { return isVisible; }
+
+        static void* hookedIsFiringMethod;
+        static void* hookedGetFireDirectionMethod;
+        static void* hookedStartFiringMethod;
+        static void* hookedFireProjectileMethod;
+        static void* hookedGetShotDirectionMethod;
+        static void* hookedApplyBulletForceMethod;
+        static bool isFiringHookActive;
+        static bool pendingSilentAim;
+        static Menu* menuInstance;
+
+        bool silentAimEnabled = false;
+        bool aimbotTargetAllies = true;
+        float aimbotFov = 200.0f;
+        GameState& sharedState;
+        void* setAimRotationMethod = nullptr;
+        void* lookRotMethod = nullptr;
+        void* getTransformMethod = nullptr;
+        void* getPosMethod = nullptr;
+        void* getFireDirectionMethod = nullptr;
+        void* startFiringMethod = nullptr;
+        void* getHeadTFMethod = nullptr;
+        int aimbotHitbox = 0;
+        int silentAimApproach = 0;
+        float silentAimMaxDistance = 300.0f;
+        std::string silentAimStatus = OBFUSCATE("Inativo");
+
+
 
     private:
         void initStyle();
@@ -27,9 +57,8 @@ namespace GhostSystems {
         void drawESP();
         void drawIl2CppObject(void* obj, void* klass, const char* name, int depth, const std::string& path);
 
-        GameState& sharedState;
         bool isVisible = true;
-        
+
         // Flag de produção vs desenvolvimento
         bool isDebugMode = true; // Mude para false para esconder as abas de debug
 
@@ -40,8 +69,8 @@ namespace GhostSystems {
         bool isLogged = true;
 
         // User Info
-        std::string userName = "GhostSystems User";
-        std::string userPlan = "Premium";
+        std::string userName = OBFUSCATE("GhostSystems User");
+        std::string userPlan = OBFUSCATE("Premium");
         long long userTimeLeft = 0;
         long long userExpireAt = -1;
 
@@ -69,11 +98,8 @@ namespace GhostSystems {
         bool aimbotEnabled = true;
         int aimbotMode = 0; // 0 = Tradicional (Ao Atirar), 1 = Aimlock (Sempre)
         bool aimbotDrawFov = true;
-        bool aimbotTargetAllies = true;
-float aimbotFov = 200.0f;
 bool aimbotVisibilityCheck = true; // Só puxa se o player estiver visível
-bool aimbotMagnetic = false; // Mira Magnética (Puxa o inimigo pra frente da mira)
-int aimbotHitbox = 0; // 0 = Cabeça, 1 = Pescoço, 2 = Peito
+        bool aimbotMagnetic = false; // Mira Magnética (Puxa o inimigo pra frente da mira)
 
 // Lógica de Smooth e Força (Aimbot Delay)
 float aimbotPullStrength = 1.5f; // Força base do aimbot (aumentada pra ficar mais forte)
@@ -84,14 +110,14 @@ std::unordered_map<void*, float> aimbotTargetTimeMap; // Guarda o tempo de foco 
 
         // Variaveis de Debug Aimbot
         bool aimbotHasTarget = false;
-        std::string aimbotTargetName = "Nenhum";
+        std::string aimbotTargetName = OBFUSCATE("Nenhum");
         float aimbotTargetDistFOV = 0.0f;
         float aimbotTargetDist3D = 0.0f;
         float aimbotCamPosX = 0.0f, aimbotCamPosY = 0.0f, aimbotCamPosZ = 0.0f;
         float aimbotCamRotX = 0.0f, aimbotCamRotY = 0.0f, aimbotCamRotZ = 0.0f, aimbotCamRotW = 0.0f;
         float aimbotTargetRotX = 0.0f, aimbotTargetRotY = 0.0f, aimbotTargetRotZ = 0.0f, aimbotTargetRotW = 0.0f;
         float aimbotNewRotX = 0.0f, aimbotNewRotY = 0.0f, aimbotNewRotZ = 0.0f, aimbotNewRotW = 0.0f;
-        std::string aimbotErrorLog = "Nenhum erro";
+        std::string aimbotErrorLog = OBFUSCATE("Nenhum erro");
 
         // Variaveis de controle de tempo (Delay) do Aimbot
         float aimbotDelayTimer = 0.0f;
@@ -117,15 +143,20 @@ std::unordered_map<void*, float> aimbotTargetTimeMap; // Guarda o tempo de foco 
         float infJumpStep = 2.0f;
 
         // Configurações de Silent Aim
-        bool silentAimEnabled = false;
-        int silentAimApproach = 0; // 0=Hook GetFireDirection, 1=Hook StartFiring, 2=Hook LookAtPosition, 3=Hook GetLookDirection, 4=Raycast Predicition, 5=Modificar Rotacao
         bool silentAimDrawDebug = false;
         float silentAimSmooth = 0.1f; // Suavização do silent aim
         bool silentAimFovCheck = true; // Verificar FOV antes de aplicar
-        float silentAimMaxDistance = 300.0f; // Distância máxima do silent aim
-        std::string silentAimStatus = "Inativo";
 
         void scanForPotentialValues(void* obj, void* klass, const std::string& path, int depth, std::unordered_set<void*>& visited);
     };
+
+    // Define struct para Vector3 que será usado no hook
+    struct HookVector3Args { float x, y, z; };
+
+    namespace Hooks {
+        bool hook_IsFiring(void* playerObj, void* exc);
+        void* hook_GetFireDirection(void* playerObj, bool* isSkill);
+        void hook_StartFiring(void* playerObj, void* weaponObj);
+    }
 
 } // namespace GhostSystems

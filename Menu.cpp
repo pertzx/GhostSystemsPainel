@@ -1,6 +1,7 @@
 #include "Menu.h"
 #include "Obfuscator.h"
 #include "Il2CppHelper.h"
+#include "And64InlineHook.hpp"
 #include <imgui.h>
 #include <string>
 #include <mutex>
@@ -9,8 +10,30 @@
 #include <sstream>
 
 namespace GhostSystems {
+    // Strings ofuscadas para arrays (descriptografadas em runtime)
+    static const char* hitbox_0() { static std::string s = OBFUSCATE("Cabeca"); return s.c_str(); }
+    static const char* hitbox_1() { static std::string s = OBFUSCATE("Pescoco"); return s.c_str(); }
+    static const char* hitbox_2() { static std::string s = OBFUSCATE("Peito"); return s.c_str(); }
+    static const char* approach_0() { static std::string s = OBFUSCATE("0: Hook GetFireDirection"); return s.c_str(); }
+    static const char* approach_1() { static std::string s = OBFUSCATE("1: Hook StartFiring + Modificar"); return s.c_str(); }
+    static const char* approach_2() { static std::string s = OBFUSCATE("2: Hook LookAtPosition (Camera)"); return s.c_str(); }
+    static const char* approach_3() { static std::string s = OBFUSCATE("3: Hook GetLookDirection"); return s.c_str(); }
+    static const char* approach_4() { static std::string s = OBFUSCATE("4: Raycast Prediction"); return s.c_str(); }
+    static const char* approach_5() { static std::string s = OBFUSCATE("5: Modificar Rotacao"); return s.c_str(); }
+    static const char* aimbot_mode_0() { static std::string s = OBFUSCATE("Tradicional (Ao Atirar)"); return s.c_str(); }
+    static const char* aimbot_mode_1() { static std::string s = OBFUSCATE("Aimlock (Sempre)"); return s.c_str(); }
+    static const char* box_style_0() { static std::string s = OBFUSCATE("Box Completa"); return s.c_str(); }
+    static const char* box_style_1() { static std::string s = OBFUSCATE("Box Cantos (Corners)"); return s.c_str(); }
 
-    void Menu::initStyle() {
+    // Inicialização das variáveis estáticas do hook
+    void* Menu::hookedIsFiringMethod = nullptr;
+    void* Menu::hookedGetFireDirectionMethod = nullptr;
+    void* Menu::hookedStartFiringMethod = nullptr;
+    bool Menu::isFiringHookActive = false;
+    bool Menu::pendingSilentAim = false;
+    Menu* Menu::menuInstance = nullptr;
+
+    void GhostSystems::Menu::initStyle() {
         ImGuiStyle& style = ImGui::GetStyle();
         style.WindowRounding = 8.0f;
         style.FrameRounding = 6.0f;
@@ -32,30 +55,11 @@ namespace GhostSystems {
         style.Colors[ImGuiCol_ButtonActive] = ImVec4(0.3f, 0.3f, 0.35f, 1.0f);
     }
 
-    void Menu::loadUserInfo() {
-        std::ifstream file("/data/local/tmp/.gs_license");
-        if (!file.is_open()) {
-            return;
-        }
-
-        std::string line;
-        while (std::getline(file, line)) {
-            std::string key;
-            std::string value;
-            std::istringstream iss(line);
-            if (std::getline(iss, key, '=') && std::getline(iss, value)) {
-                if (key == "USUARIO") userName = value;
-                else if (key == "PLANO") userPlan = value;
-                else if (key == "TEMPO_RESTANTE") userTimeLeft = std::stoll(value);
-                else if (key == "EXPIRA_EM") userExpireAt = std::stoll(value);
-            }
-        }
-        file.close();
-
-        std::remove("/data/local/tmp/.gs_license");
+    void GhostSystems::Menu::loadUserInfo() {
+        // Função removida por segurança - anticheat pode detectar operações de arquivo
     }
 
-    void Menu::drawFilters() {
+    void GhostSystems::Menu::drawFilters() {
         ImGui::Text("%s", OBFUSCATE("Filtros de Depuração"));
         ImGui::Separator();
         
@@ -63,16 +67,15 @@ namespace GhostSystems {
         ImGui::SameLine();
         ImGui::Checkbox(OBFUSCATE("Apenas Humanos"), &filterHumansOnly);
         
-        ImGui::SliderFloat(OBFUSCATE("Distância Máxima"), &maxDistanceFilter, 0.0f, 100.0f, "%.0f m");
+        ImGui::SliderFloat(OBFUSCATE("Distância Máxima"), &maxDistanceFilter, 0.0f, 100.0f, OBFUSCATE("%.0f m"));
         
-        // Filtro de time (-1 == todos)
-        ImGui::SliderInt(OBFUSCATE("Filtro de Team ID"), &filterTeamId, -1, 10, filterTeamId == -1 ? "Todos" : "%d");
+        ImGui::SliderInt(OBFUSCATE("Filtro de Team ID"), &filterTeamId, -1, 10, filterTeamId == -1 ? OBFUSCATE("Todos") : OBFUSCATE("%d"));
         ImGui::Separator();
     }
 
-    void Menu::drawEntityList() {
+    void GhostSystems::Menu::drawEntityList() {
         // Garantindo acesso seguro aos dados lidos pelo MemoryScanner
-        std::vector<PlayerEntity> localEntities;
+        std::vector<GhostSystems::PlayerEntity> localEntities;
         {
             std::lock_guard<std::mutex> lock(sharedState.mtx);
             localEntities = sharedState.entities; // Copia leve para minimizar lock na thread de renderização
@@ -80,12 +83,12 @@ namespace GhostSystems {
 
         if (ImGui::BeginTable("EntityTable", 6, ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg | ImGuiTableFlags_ScrollY, ImVec2(0, 300))) {
             ImGui::TableSetupScrollFreeze(0, 1); // Fixa o header
-            ImGui::TableSetupColumn("Nome", ImGuiTableColumnFlags_WidthFixed, 100.0f);
-            ImGui::TableSetupColumn("Vida", ImGuiTableColumnFlags_WidthFixed, 80.0f);
-            ImGui::TableSetupColumn("Coord (X,Y,Z)", ImGuiTableColumnFlags_WidthStretch);
-            ImGui::TableSetupColumn("Tipo", ImGuiTableColumnFlags_WidthFixed, 50.0f);
-            ImGui::TableSetupColumn("Time", ImGuiTableColumnFlags_WidthFixed, 40.0f);
-            ImGui::TableSetupColumn("Status", ImGuiTableColumnFlags_WidthFixed, 60.0f);
+            ImGui::TableSetupColumn(OBFUSCATE("Nome"), ImGuiTableColumnFlags_WidthFixed, 100.0f);
+            ImGui::TableSetupColumn(OBFUSCATE("Vida"), ImGuiTableColumnFlags_WidthFixed, 80.0f);
+            ImGui::TableSetupColumn(OBFUSCATE("Coord (X,Y,Z)"), ImGuiTableColumnFlags_WidthStretch);
+            ImGui::TableSetupColumn(OBFUSCATE("Tipo"), ImGuiTableColumnFlags_WidthFixed, 50.0f);
+            ImGui::TableSetupColumn(OBFUSCATE("Time"), ImGuiTableColumnFlags_WidthFixed, 40.0f);
+            ImGui::TableSetupColumn(OBFUSCATE("Status"), ImGuiTableColumnFlags_WidthFixed, 60.0f);
             ImGui::TableHeadersRow();
 
             for (const auto& entity : localEntities) {
@@ -121,7 +124,7 @@ namespace GhostSystems {
 
                 // Tipo
                 ImGui::TableSetColumnIndex(3);
-                ImGui::Text("%s", entity.isBot ? "BOT" : "PLAYER");
+                ImGui::Text("%s", entity.isBot ? OBFUSCATE("BOT") : OBFUSCATE("PLAYER"));
 
                 // Time
                 ImGui::TableSetColumnIndex(4);
@@ -130,18 +133,24 @@ namespace GhostSystems {
                 // Status (Knocked / Vivo / Morto)
                 ImGui::TableSetColumnIndex(5);
                 if (!entity.isAlive()) {
-                    ImGui::TextColored(ImVec4(0.5f, 0.5f, 0.5f, 1.0f), "MORTO");
+                    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.5f, 0.5f, 0.5f, 1.0f));
+                    ImGui::Text("%s", OBFUSCATE("MORTO"));
+                    ImGui::PopStyleColor();
                 } else if (entity.isKnocked) {
-                    ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.0f, 1.0f), "DERRUBADO");
+                    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.5f, 0.0f, 1.0f));
+                    ImGui::Text("%s", OBFUSCATE("DERRUBADO"));
+                    ImGui::PopStyleColor();
                 } else {
-                    ImGui::TextColored(ImVec4(0.2f, 1.0f, 0.2f, 1.0f), "VIVO");
+                    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.2f, 1.0f, 0.2f, 1.0f));
+                    ImGui::Text("%s", OBFUSCATE("VIVO"));
+                    ImGui::PopStyleColor();
                 }
             }
             ImGui::EndTable();
         }
     }
 
-    void Menu::render() {
+    void GhostSystems::Menu::render() {
         if (!isVisible) return;
 
         ImGuiWindowFlags windowFlags = ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoSavedSettings;
@@ -163,75 +172,77 @@ namespace GhostSystems {
             
             ImGui::Checkbox(OBFUSCATE("Ativar Painel"), &masterSwitch);
 
-            ImGui::SameLine(ImGui::GetWindowWidth() - 280);
-            ImGui::TextColored(ImVec4(0.4f, 0.8f, 1.0f, 1.0f), "%s", userName.c_str());
-            ImGui::SameLine(ImGui::GetWindowWidth() - 150);
-            ImGui::TextColored(ImVec4(0.8f, 0.6f, 0.2f, 1.0f), "%s", userPlan.c_str());
-            ImGui::SameLine(ImGui::GetWindowWidth() - 50);
-            if (userExpireAt == -1) {
-                ImGui::TextColored(ImVec4(0.2f, 1.0f, 0.2f, 1.0f), "LIFETIME");
-            } else if (userTimeLeft <= 0) {
-                ImGui::TextColored(ImVec4(1.0f, 0.2f, 0.2f, 1.0f), "EXPIRED");
-            } else {
-                int dias = userTimeLeft / 86400000;
-                int horas = (userTimeLeft % 86400000) / 3600000;
-                int mins = (userTimeLeft % 3600000) / 60000;
-                if (dias > 0) ImGui::TextColored(ImVec4(0.2f, 1.0f, 0.5f, 1.0f), "%dd %dh", dias, horas);
-                else if (horas > 0) ImGui::TextColored(ImVec4(0.2f, 1.0f, 0.5f, 1.0f), "%dh %dm", horas, mins);
-                else ImGui::TextColored(ImVec4(0.2f, 1.0f, 0.5f, 1.0f), "%dm", mins);
-            }
+            // Informações de usuário removidas por segurança
 
             ImGui::Separator();
             
             if (masterSwitch) {
-                if (ImGui::BeginTabBar("MenuTabs")) {
-                if (ImGui::BeginTabItem("Combate")) {
+                if (ImGui::BeginTabBar(OBFUSCATE("##MenuTabs"))) {
+                if (ImGui::BeginTabItem(OBFUSCATE("##Combate"))) {
                     ImGui::Checkbox(OBFUSCATE("Aimbot Tradicional"), &aimbotEnabled);
-                const char* aimbotModes[] = { "Tradicional (Ao Atirar)", "Aimlock (Sempre)" };
-                ImGui::Combo("Modo", &aimbotMode, aimbotModes, IM_ARRAYSIZE(aimbotModes));
-                ImGui::Checkbox(OBFUSCATE("Mostrar FOV"), &aimbotDrawFov);
-                ImGui::Checkbox(OBFUSCATE("Mirar em Aliados"), &aimbotTargetAllies);
-                ImGui::Checkbox(OBFUSCATE("Ignorar Invisiveis (Atras da Parede)"), &aimbotVisibilityCheck);
-                ImGui::Checkbox(OBFUSCATE("Mira Magnetica (Puxa inimigo)"), &aimbotMagnetic);
-                ImGui::SliderFloat(OBFUSCATE("Raio do FOV"), &aimbotFov, 10.0f, 500.0f, "%.0f px");
-                
-                ImGui::Separator();
-                ImGui::TextColored(ImVec4(1.0f, 1.0f, 0.0f, 1.0f), "Força & Lógica Absoluta");
-                
-                const char* hitboxes[] = { "Cabeça", "Pescoço", "Peito" };
-                ImGui::Combo(OBFUSCATE("Alvo (Hitbox)"), &aimbotHitbox, hitboxes, IM_ARRAYSIZE(hitboxes));
-                
-                ImGui::SliderFloat(OBFUSCATE("Força Magnética (Puxão)"), &aimbotPullStrength, 1.0f, 5.0f, "%.1f");
-                
-                ImGui::Separator();
-                ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.0f, 1.0f), "Aimbot Delay (Peito -> Alvo)");
-                ImGui::SliderFloat("Smooth Time (ms)", &aimbotSmoothTimeMs, 0.0f, 200.0f, "%.0f ms");
-                ImGui::SliderFloat("Smooth Curve", &aimbotSmoothCurve, 1.0f, 10.0f, "%.1f");
-                ImGui::TextColored(ImVec4(0.0f, 1.0f, 0.0f, 1.0f), "Modo Logica Pura Ativo: Sem delays ou aceleracoes.");
-                
-                ImGui::TextColored(ImVec4(0.5f, 0.5f, 0.5f, 1.0f), "A mira foca no inimigo mais proximo do centro (FOV).");
+                    const char* aimbotModes[] = { aimbot_mode_0(), aimbot_mode_1() };
+                    ImGui::Combo(OBFUSCATE("Modo"), &aimbotMode, aimbotModes, IM_ARRAYSIZE(aimbotModes));
+                    ImGui::Checkbox(OBFUSCATE("Mostrar FOV"), &aimbotDrawFov);
+                    ImGui::Checkbox(OBFUSCATE("Mirar em Aliados"), &aimbotTargetAllies);
+                    ImGui::Checkbox(OBFUSCATE("Ignorar Invisiveis (Atras da Parede)"), &aimbotVisibilityCheck);
+                    ImGui::Checkbox(OBFUSCATE("Mira Magnetica (Puxa inimigo)"), &aimbotMagnetic);
+                    ImGui::SliderFloat(OBFUSCATE("Raio do FOV"), &aimbotFov, 10.0f, 500.0f, OBFUSCATE("%.0f px"));
+                    
+                    ImGui::Separator();
+                    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 1.0f, 0.0f, 1.0f));
+                    ImGui::Text("%s", OBFUSCATE("Forca & Logica Absoluta"));
+                    ImGui::PopStyleColor();
+                    
+                    const char* hitboxes[] = { hitbox_0(), hitbox_1(), hitbox_2() };
+                    ImGui::Combo(OBFUSCATE("Alvo (Hitbox)"), &aimbotHitbox, hitboxes, IM_ARRAYSIZE(hitboxes));
+                    
+                    ImGui::SliderFloat(OBFUSCATE("Forca Magnetica (Puxao)"), &aimbotPullStrength, 1.0f, 10.0f, OBFUSCATE("%.1f"));
+                    
+                    ImGui::Separator();
+                    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.5f, 0.0f, 1.0f));
+                    ImGui::Text("%s", OBFUSCATE("Aimbot Delay (Peito -> Alvo)"));
+                    ImGui::PopStyleColor();
+                    ImGui::SliderFloat(OBFUSCATE("Smooth Time (ms)"), &aimbotSmoothTimeMs, 0.0f, 200.0f, OBFUSCATE("%.0f ms"));
+                    ImGui::SliderFloat(OBFUSCATE("Smooth Curve"), &aimbotSmoothCurve, 1.0f, 10.0f, OBFUSCATE("%.1f"));
+                    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.0f, 1.0f, 0.0f, 1.0f));
+                    ImGui::Text("%s", OBFUSCATE("Modo Logica Pura Ativo: Sem delays ou aceleracoes."));
+                    ImGui::PopStyleColor();
+                    
+                    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.5f, 0.5f, 0.5f, 1.0f));
+                    ImGui::Text("%s", OBFUSCATE("A mira foca no inimigo mais proximo do centro (FOV)."));
+                    ImGui::PopStyleColor();
 
-                ImGui::Separator();
-                ImGui::TextColored(ImVec4(1.0f, 0.2f, 1.0f, 1.0f), "=== SILENT AIM ===");
-                ImGui::Checkbox(OBFUSCATE("Ativar Silent Aim"), &silentAimEnabled);
+                    ImGui::Separator();
+                    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.2f, 1.0f, 1.0f));
+                    ImGui::Text("%s", OBFUSCATE("=== SILENT AIM ==="));
+                    ImGui::PopStyleColor();
+                    ImGui::Checkbox(OBFUSCATE("Ativar Silent Aim"), &silentAimEnabled);
                     const char* approaches[] = {
-                        "0: Hook GetFireDirection (Recomendado)",
-                        "1: Hook StartFiring + Modificar",
-                        "2: Hook LookAtPosition (Camera)",
-                        "3: Hook GetLookDirection",
-                        "4: Raycast/Predicao Custom",
-                        "5: Modificar Rotacao Player"
+                        approach_0(),
+                        approach_1(),
+                        approach_2(),
+                        approach_3(),
+                        approach_4(),
+                        approach_5()
                     };
-                    ImGui::Combo(OBFUSCATE("Abordagem"), &silentAimApproach, approaches, IM_ARRAYSIZE(approaches));
+                    const int numApproaches = 6; // 0-5 = 6 opções
+                    if (silentAimApproach < 0 || silentAimApproach >= numApproaches) {
+                        silentAimApproach = 0;
+                    }
+                    ImGui::Combo(OBFUSCATE("Abordagem"), &silentAimApproach, approaches, numApproaches);
                     ImGui::Checkbox(OBFUSCATE("Mostrar Debug"), &silentAimDrawDebug);
-                    ImGui::SliderFloat(OBFUSCATE("Suavizacao (Smooth)"), &silentAimSmooth, 0.0f, 1.0f, "%.2f");
-                    ImGui::SliderFloat(OBFUSCATE("Distancia Maxima"), &silentAimMaxDistance, 50.0f, 500.0f, "%.0f m");
-                    ImGui::TextColored(ImVec4(0.2f, 1.0f, 0.2f, 1.0f), "Status: %s", silentAimStatus.c_str());
-                    ImGui::TextColored(ImVec4(1.0f, 1.0f, 0.0f, 1.0f), "ATENCAO: Teste cada abordagem para ver qual funciona!");
+                    ImGui::SliderFloat(OBFUSCATE("Suavizacao (Smooth)"), &silentAimSmooth, 0.0f, 1.0f, OBFUSCATE("%.2f"));
+                    ImGui::SliderFloat(OBFUSCATE("Distancia Maxima"), &silentAimMaxDistance, 50.0f, 500.0f, OBFUSCATE("%.0f m"));
+                    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.2f, 1.0f, 0.2f, 1.0f));
+                    ImGui::Text("%s: %s", OBFUSCATE("Status"), silentAimStatus.c_str());
+                    ImGui::PopStyleColor();
+                    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 1.0f, 0.0f, 1.0f));
+                    ImGui::Text("%s", OBFUSCATE("ATENCAO: Teste cada abordagem para ver qual funciona!"));
+                    ImGui::PopStyleColor();
                     ImGui::EndTabItem();
                 }
 
-                if (ImGui::BeginTabItem("Funcoes ESP")) {
+                if (ImGui::BeginTabItem(OBFUSCATE("##FuncoesESP"))) {
                     ImGui::Checkbox(OBFUSCATE("Ativar ESP"), &espEnabled);
                     if (espEnabled) {
                         ImGui::Checkbox(OBFUSCATE("ESP Box"), &espBox);
@@ -245,25 +256,27 @@ namespace GhostSystems {
                         // ImGui::Checkbox("Esqueleto (Bones)", &espSkeleton); // DESATIVADO - POSSIVEL CAUSA DE BAN
 
                         ImGui::Separator();
-                        ImGui::TextColored(ImVec4(1.0f, 1.0f, 0.0f, 1.0f), "Filtro de Distancia ESP");
-                        ImGui::SliderFloat(OBFUSCATE("Maxima"), &espMaxDistance, 10.0f, 100.0f, "%.0f m");
+                        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 1.0f, 0.0f, 1.0f));
+                        ImGui::Text("%s", OBFUSCATE("Filtro de Distancia ESP"));
+                        ImGui::PopStyleColor();
+                        ImGui::SliderFloat(OBFUSCATE("Maxima"), &espMaxDistance, 10.0f, 100.0f, OBFUSCATE("%.0f m"));
                     }
                     ImGui::EndTabItem();
                 }
 
-                if (ImGui::BeginTabItem("Estilos")) {
-                    ImGui::Text("Configuracoes de Estilo e Cores");
+                if (ImGui::BeginTabItem(OBFUSCATE("##Estilos"))) {
+                    ImGui::Text(OBFUSCATE("Configuracoes de Estilo e Cores"));
                     ImGui::Separator();
                     
-                    const char* boxStyles[] = { "Box Completa", "Box Cantos (Corners)" };
-                    ImGui::Combo("Estilo da Box", &espBoxStyle, boxStyles, IM_ARRAYSIZE(boxStyles));
+                    const char* boxStyles[] = { box_style_0(), box_style_1() };
+                    ImGui::Combo(OBFUSCATE("Estilo da Box"), &espBoxStyle, boxStyles, IM_ARRAYSIZE(boxStyles));
                     
-                    ImGui::ColorEdit4("Cor Inimigo", espColorEnemy, ImGuiColorEditFlags_NoInputs);
-                    ImGui::ColorEdit4("Cor Aliado", espColorAlly, ImGuiColorEditFlags_NoInputs);
-                    ImGui::ColorEdit4("Cor FOV", fovColor, ImGuiColorEditFlags_NoInputs);
+                    ImGui::ColorEdit4(OBFUSCATE("Cor Inimigo"), espColorEnemy, ImGuiColorEditFlags_NoInputs);
+                    ImGui::ColorEdit4(OBFUSCATE("Cor Aliado"), espColorAlly, ImGuiColorEditFlags_NoInputs);
+                    ImGui::ColorEdit4(OBFUSCATE("Cor FOV"), fovColor, ImGuiColorEditFlags_NoInputs);
                     
                     ImGui::Separator();
-                    ImGui::Text("Preview Visual:");
+                    ImGui::Text(OBFUSCATE("Preview Visual:"));
                     ImGui::BeginChild("PreviewArea", ImVec2(0, 200), true);
                     ImDrawList* drawList = ImGui::GetWindowDrawList();
                     ImVec2 p = ImGui::GetCursorScreenPos();
@@ -302,7 +315,7 @@ namespace GhostSystems {
                     if (espName) {
                         ImFont* font = ImGui::GetFont();
                         float fontSize = ImGui::GetFontSize() * 1.3f;
-                        const char* text = "Inimigo [Preview]";
+                        const char* text = OBFUSCATE("Inimigo [Preview]");
                         ImVec2 textSize = font->CalcTextSizeA(fontSize, FLT_MAX, 0.0f, text);
                         float espacoExtra = previewH * 0.15f;
                         drawList->AddText(font, fontSize, ImVec2(center.x - textSize.x / 2.0f, pTopLeft.y - textSize.y - espacoExtra), IM_COL32(255, 255, 255, 255), text);
@@ -321,52 +334,66 @@ namespace GhostSystems {
                     ImGui::EndTabItem();
                 }
 
-                if (ImGui::BeginTabItem("Misc")) {
-                    ImGui::Checkbox("InfJump (Pulo Infinito)", &infJumpEnabled);
+                if (ImGui::BeginTabItem(OBFUSCATE("##Misc"))) {
+                    ImGui::Checkbox(OBFUSCATE("InfJump (Pulo Infinito)"), &infJumpEnabled);
                     if (infJumpEnabled) {
-                        ImGui::TextColored(ImVec4(0.5f, 0.5f, 0.5f, 1.0f), "Um botao flutuante aparecera na tela.");
-                        ImGui::SliderFloat("Unidades do Pulo (Altura)", &infJumpStep, 0.1f, 10.0f, "%.1f m");
+                        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.5f, 0.5f, 0.5f, 1.0f));
+                        ImGui::Text("%s", OBFUSCATE("Um botao flutuante aparecera na tela."));
+                        ImGui::PopStyleColor();
+                        ImGui::SliderFloat(OBFUSCATE("Unidades do Pulo (Altura)"), &infJumpStep, 0.1f, 10.0f, OBFUSCATE("%.1f m"));
                     }
                     ImGui::EndTabItem();
                 }
 
                 if (isDebugMode) {
-                    if (ImGui::BeginTabItem("Entity List (Debug)")) {
+                    if (ImGui::BeginTabItem(OBFUSCATE("##EntityList"))) {
                         drawFilters();
                         
                         ImGui::Text("%s", OBFUSCATE("Entidades Encontradas:"));
                         drawEntityList();
                         ImGui::EndTabItem();
                     }
-                    if (ImGui::BeginTabItem("Debug Player")) {
+                    if (ImGui::BeginTabItem(OBFUSCATE("##DebugPlayer"))) {
                         drawDebugPlayer();
                         ImGui::EndTabItem();
                     }
-                    if (ImGui::BeginTabItem("Debug Aimbot")) {
-                        ImGui::TextColored(ImVec4(1, 0, 0, 1), "STATUS: %s", aimbotHasTarget ? "ALVO TRAVADO" : "BUSCANDO...");
+                    if (ImGui::BeginTabItem(OBFUSCATE("##DebugAimbot"))) {
+                        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1, 0, 0, 1));
+                        ImGui::Text("%s", aimbotHasTarget ? OBFUSCATE("ALVO TRAVADO") : OBFUSCATE("BUSCANDO..."));
+                        ImGui::PopStyleColor();
                         ImGui::Separator();
-                        ImGui::Text("Alvo Atual: %s", aimbotTargetName.c_str());
-                        ImGui::Text("Distancia FOV (px): %.2f", aimbotTargetDistFOV);
-                        ImGui::Text("Distancia 3D (m): %.2f", aimbotTargetDist3D);
+                        ImGui::Text(OBFUSCATE("Alvo Atual: %s"), aimbotTargetName.c_str());
+                        ImGui::Text(OBFUSCATE("Distancia FOV (px): %.2f"), aimbotTargetDistFOV);
+                        ImGui::Text(OBFUSCATE("Distancia 3D (m): %.2f"), aimbotTargetDist3D);
                         
                         ImGui::Separator();
-                        ImGui::TextColored(ImVec4(0, 1, 0, 1), "Posicao da Camera (World):");
+                        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0, 1, 0, 1));
+                        ImGui::Text("%s", OBFUSCATE("Posicao da Camera (World):"));
+                        ImGui::PopStyleColor();
                         ImGui::Text("X: %.2f | Y: %.2f | Z: %.2f", aimbotCamPosX, aimbotCamPosY, aimbotCamPosZ);
                         
                         ImGui::Separator();
-                        ImGui::TextColored(ImVec4(0, 1, 0, 1), "Rotacao da Camera Atual (Quaternion):");
+                        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0, 1, 0, 1));
+                        ImGui::Text("%s", OBFUSCATE("Rotacao da Camera Atual (Quaternion):"));
+                        ImGui::PopStyleColor();
                         ImGui::Text("X: %.2f | Y: %.2f | Z: %.2f | W: %.2f", aimbotCamRotX, aimbotCamRotY, aimbotCamRotZ, aimbotCamRotW);
 
                         ImGui::Separator();
-                        ImGui::TextColored(ImVec4(1, 1, 0, 1), "Rotacao do Alvo (LookRotation):");
+                        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1, 1, 0, 1));
+                        ImGui::Text("%s", OBFUSCATE("Rotacao do Alvo (LookRotation):"));
+                        ImGui::PopStyleColor();
                         ImGui::Text("X: %.2f | Y: %.2f | Z: %.2f | W: %.2f", aimbotTargetRotX, aimbotTargetRotY, aimbotTargetRotZ, aimbotTargetRotW);
 
                         ImGui::Separator();
-                        ImGui::TextColored(ImVec4(0, 1, 1, 1), "Nova Rotacao Calculada (Slerp):");
+                        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0, 1, 1, 1));
+                        ImGui::Text("%s", OBFUSCATE("Nova Rotacao Calculada (Slerp):"));
+                        ImGui::PopStyleColor();
                         ImGui::Text("X: %.2f | Y: %.2f | Z: %.2f | W: %.2f", aimbotNewRotX, aimbotNewRotY, aimbotNewRotZ, aimbotNewRotW);
                         
                         ImGui::Separator();
-                        ImGui::TextColored(ImVec4(1, 0.5f, 0, 1), "Logs / Erros (Aimbot Engine):");
+                        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1, 0.5f, 0, 1));
+                        ImGui::Text("%s", OBFUSCATE("Logs / Erros (Aimbot Engine):"));
+                        ImGui::PopStyleColor();
                         ImGui::TextWrapped("%s", aimbotErrorLog.c_str());
 
                         ImGui::EndTabItem();
@@ -376,12 +403,53 @@ namespace GhostSystems {
             } // BeginTabBar
         } // masterSwitch
         } // Fim if (ImGui::Begin(...))
-        ImGui::End();
-        
-        ImGui::PopStyleVar(); // Pop da estilizacao
-    } // Fim Menu::render()
 
-    void Menu::scanForPotentialValues(void* obj, void* klass, const std::string& path, int depth, std::unordered_set<void*>& visited) {
+        // DEBUG ESP/SKELETON DESATIVADO TEMPORARIAMENTE
+        // if (espEnabled && isDebugMode) {
+        //     ImGui::SetNextWindowPos(ImVec2(screenSize.x - 320, 10), ImGuiCond_Once);
+        //     ImGui::SetNextWindowSize(ImVec2(300, 280), ImGuiCond_Once);
+        //     ImGui::Begin("Debug ESP / Skeleton", nullptr, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove);
+        //     ImGui::TextColored(ImVec4(1, 1, 0, 1), "=== DEBUG ESP / SKELETON ===");
+        //     ImGui::Separator();
+        //
+        //     ImGui::TextColored(ImVec4(0, 1, 0, 1), "Metodos IL2CPP:");
+        //     ImGui::Text("getBoneTransformMethod: %s", getBoneTransformMethod ? "OK" : "NULL");
+        //     ImGui::Text("animatorTypeObject: %s", animatorTypeObject ? "OK" : "NULL");
+        //     ImGui::Text("getPosMethod: %s", getPosMethod ? "OK" : "NULL");
+        //     ImGui::Text("worldToScreenMethod: %s", worldToScreenMethod ? "OK" : "NULL");
+        //     ImGui::Text("getComponentMethod: %s", getComponentMethod ? "OK" : "NULL");
+        //     ImGui::Text("getAnimatorMethod: %s", getAnimatorMethod ? "OK" : "NULL");
+        //
+        //     ImGui::Separator();
+        //     ImGui::TextColored(ImVec4(0, 1, 0, 1), "Cache de Animators:");
+        //     int cachedCount = 0;
+        //     for (auto& pair : cachedAnimators) {
+        //         if (pair.second.animatorObj) cachedCount++;
+        //     }
+        //     ImGui::Text("Animator cacheado: %d / %d", cachedCount, (int)cachedAnimators.size());
+        //
+        //     ImGui::Separator();
+        //     ImGui::TextColored(ImVec4(1, 1, 0, 1), "Bones IDs:");
+        //     ImGui::Text("Head=0 Neck=9 Spine=7 Hips=0");
+        //     ImGui::Text("L.Shoulder=11 L.UpperArm=13 L.LowerArm=15 L.Hand=17");
+        //     ImGui::Text("R.Shoulder=11 R.UpperArm=13 R.LowerArm=15 R.Hand=17");
+        //     ImGui::Text("L.Thigh=25 L.Knee=27 L.Ankle=29");
+        //     ImGui::Text("R.Thigh=25 R.Knee=27 R.Ankle=29");
+        //
+        //     ImGui::Separator();
+        //     ImGui::TextColored(ImVec4(1, 0.5f, 0, 1), "Erros comuns:");
+        //     ImGui::Text("- GetBoneTransform nao encontrado");
+        //     ImGui::Text("- Animator nao achado na entity");
+        //     ImGui::Text("- Bones nao convertidos pra screen");
+        //
+        //     ImGui::End();
+        // }
+
+        ImGui::End();
+        ImGui::PopStyleVar();
+    }
+
+    void GhostSystems::Menu::scanForPotentialValues(void* obj, void* klass, const std::string& path, int depth, std::unordered_set<void*>& visited) {
         if (!obj || !klass || depth > 1) return;
         if (visited.count(obj)) return;
         visited.insert(obj);
@@ -389,7 +457,7 @@ namespace GhostSystems {
         void* current_klass = klass;
         while (current_klass) {
             const char* currentClassName = Il2Cpp::class_get_name(current_klass);
-            if (!currentClassName) currentClassName = "UnknownClass";
+            if (!currentClassName) currentClassName = OBFUSCATE("UnknownClass");
 
             void* iter = nullptr;
             void* field = nullptr;
@@ -399,7 +467,7 @@ namespace GhostSystems {
                 void* type = Il2Cpp::field_get_type(field);
                 const char* typeName = type ? Il2Cpp::type_get_name(type) : "UnknownType";
 
-                if (!fieldName) fieldName = "UnknownField";
+                if (!fieldName) fieldName = OBFUSCATE("UnknownField");
                 std::string currentPath = path + "." + currentClassName + "." + fieldName;
 
                 bool isArray = strstr(typeName, "[]") != nullptr || strstr(typeName, "Array") != nullptr;
@@ -453,7 +521,7 @@ namespace GhostSystems {
         }
     }
 
-    void Menu::drawDebugPlayer() {
+    void GhostSystems::Menu::drawDebugPlayer() {
         void* localPlayerObj = nullptr;
         {
             std::lock_guard<std::mutex> lock(sharedState.mtx);
@@ -461,36 +529,36 @@ namespace GhostSystems {
         }
 
         if (!localPlayerObj) {
-            ImGui::Text("Nenhum jogador local encontrado ou Il2Cpp offline.");
+            ImGui::Text(OBFUSCATE("Nenhum jogador local encontrado ou Il2Cpp offline."));
             return;
         }
 
         void* klass = Il2Cpp::object_get_class(localPlayerObj);
         if (!klass) {
-            ImGui::Text("Falha ao obter a classe do jogador local.");
+            ImGui::Text(OBFUSCATE("Falha ao obter a classe do jogador local."));
             return;
         }
 
-        if (ImGui::Button("Escanear Valores Possiveis (HP/Yaw/Pitch)")) {
+        if (ImGui::Button(OBFUSCATE("Escanear Valores Possiveis (HP/Yaw/Pitch)"))) {
             debugPotentialValues.clear();
             std::unordered_set<void*> visited;
             scanForPotentialValues(localPlayerObj, klass, "LocalPlayer", 0, visited);
             hasScannedValues = true;
         }
         ImGui::SameLine();
-        if (ImGui::Button("Limpar")) {
+        if (ImGui::Button(OBFUSCATE("Limpar"))) {
             debugPotentialValues.clear();
             hasScannedValues = false;
         }
 
         if (hasScannedValues) {
             ImGui::Separator();
-            ImGui::Text("Valores: %zu", debugPotentialValues.size());
+            ImGui::Text(OBFUSCATE("Valores: %zu"), debugPotentialValues.size());
             ImGui::SameLine();
-            ImGui::Checkbox("Floats", &filterOnlyFloats); ImGui::SameLine();
-            ImGui::Checkbox("Ints", &filterOnlyInts);
+            ImGui::Checkbox(OBFUSCATE("Floats"), &filterOnlyFloats); ImGui::SameLine();
+            ImGui::Checkbox(OBFUSCATE("Ints"), &filterOnlyInts);
             ImGui::PushItemWidth(150);
-            ImGui::InputText("Buscar", searchFilter, sizeof(searchFilter));
+            ImGui::InputText(OBFUSCATE("Buscar"), searchFilter, sizeof(searchFilter));
             ImGui::PopItemWidth();
             ImGui::Separator();
 
@@ -542,23 +610,23 @@ namespace GhostSystems {
             // Botões flutuantes para scroll contínuo (usando IsItemActive)
             ImGui::SetCursorScreenPos(ImVec2(childPos.x + childSize.x - 70, childPos.y + childSize.y - 130));
             ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.3f, 0.3f, 0.3f, 0.8f));
-            ImGui::Button("Up", ImVec2(50, 50));
+            ImGui::Button(OBFUSCATE("Up"), ImVec2(50, 50));
             if (ImGui::IsItemActive()) doScroll = -15.0f; // Scroll suave contínuo
 
             ImGui::SetCursorScreenPos(ImVec2(childPos.x + childSize.x - 70, childPos.y + childSize.y - 70));
-            ImGui::Button("Dn", ImVec2(50, 50));
+            ImGui::Button(OBFUSCATE("Dn"), ImVec2(50, 50));
             if (ImGui::IsItemActive()) doScroll = 15.0f; // Scroll suave contínuo
 
             ImGui::PopStyleColor();
         } else {
-            ImGui::Text("Clique em 'Escanear' para buscar floats e ints no Player.");
+            ImGui::Text(OBFUSCATE("Clique em 'Escanear' para buscar floats e ints no Player."));
         }
     }
 
-    void Menu::drawESP() {
+    void GhostSystems::Menu::drawESP() {
         if (!masterSwitch) return; // Se o painel esta desativado, nao fazemos nada
 
-        std::vector<PlayerEntity> localEntities;
+        std::vector<GhostSystems::PlayerEntity> localEntities;
         {
             std::lock_guard<std::mutex> lock(sharedState.mtx);
             localEntities = sharedState.entities;
@@ -568,6 +636,15 @@ namespace GhostSystems {
             masterSwitch = false; // Desativa tudo caso nao haja entidades (Lobby)
             return;
         }
+
+        // Declaracoes das variaveis usadas no aimbot/ESP
+        ImDrawList* drawList = nullptr;
+        ImVec2 screenSize(0, 0);
+        ImVec2 screenCenter(0, 0);
+        float closestAimbotDist = FLT_MAX;
+        ImVec2 bestTargetPos(0, 0);
+        bool foundAimbotTarget = false;
+        void* bestTargetObj = nullptr;
 
         static void* get_mainMethod = nullptr;
         static void* worldToScreenMethod = nullptr;
@@ -600,6 +677,8 @@ namespace GhostSystems {
         static void* getGoComponentMethod = nullptr;
         static void* getComponentNormalMethod = nullptr;
         static void* getNewAnimComponentMethod = nullptr;
+        static void* getFireDirectionMethod = nullptr;
+        static void* startFiringMethod = nullptr;
 
         static bool methodsSearched = false;
 
@@ -727,8 +806,34 @@ namespace GhostSystems {
                 void* playerKlass = Il2Cpp::object_get_class(sharedState.localPlayerObj);
                 if (playerKlass) {
                     getHeadTFMethod = Il2Cpp::GetMethodRecursively(playerKlass, "GetHeadTF", 0);
+                    if (getHeadTFMethod) {
+                        this->getHeadTFMethod = getHeadTFMethod;
+                    }
                 }
             }
+            // Cache do metodo IsFiring para hook real
+            if ((!isFiringMethod) && sharedState.localPlayerObj) {
+                void* playerKlass = Il2Cpp::object_get_class(sharedState.localPlayerObj);
+                if (playerKlass) {
+                    isFiringMethod = Il2Cpp::GetMethodRecursively(playerKlass, "IsFiring", 0);
+                }
+            }
+            // Cache do metodo GetFireDirection para Silent Aim
+            if ((!getFireDirectionMethod) && sharedState.localPlayerObj) {
+                void* playerKlass = Il2Cpp::object_get_class(sharedState.localPlayerObj);
+                if (playerKlass) {
+                    getFireDirectionMethod = Il2Cpp::GetMethodRecursively(playerKlass, "GetFireDirection", 1);
+                }
+            }
+            // Cache do metodo StartFiring para Silent Aim
+            if ((!startFiringMethod) && sharedState.localPlayerObj) {
+                void* playerKlass = Il2Cpp::object_get_class(sharedState.localPlayerObj);
+                if (playerKlass) {
+                    startFiringMethod = Il2Cpp::GetMethodRecursively(playerKlass, "StartFiring", 1);
+                }
+            }
+
+
             // DESATIVADO - Skeleton/Bone causa ban (nao reativar)
             getHipTFMethod = nullptr;
             getLeftAnkleTFMethod = nullptr;
@@ -742,10 +847,37 @@ namespace GhostSystems {
             getGoComponentMethod = nullptr;
             getComponentNormalMethod = nullptr;
             isVisibleMethod = nullptr;
-            isFiringMethod = nullptr;
             getNewAnimComponentMethod = nullptr;
 
             methodsSearched = true;
+        }
+
+        // Verifica se a abordagem é válida (0-6)
+        if (silentAimApproach < 0 || silentAimApproach > 5) {
+            silentAimApproach = 0; // Reseta para abordagem padrão se inválida
+            silentAimStatus = OBFUSCATE("Abordagem inválida! Resetando para 0");
+        }
+
+        // Aplica hook real no IsFiring se ainda não foi feito
+        if (isFiringMethod && !GhostSystems::Menu::isFiringHookActive && silentAimEnabled) {
+            void* targetMethod = isFiringMethod;
+            A64HookFunction(targetMethod, (void*)GhostSystems::Hooks::hook_IsFiring, (void**)&GhostSystems::Menu::hookedIsFiringMethod);
+            GhostSystems::Menu::isFiringHookActive = true;
+            silentAimStatus = OBFUSCATE("Hook IsFiring Ativo");
+        }
+
+        // Aplica hook no GetFireDirection se silentAimApproach == 0
+        if (getFireDirectionMethod && !GhostSystems::Menu::hookedGetFireDirectionMethod && silentAimEnabled && silentAimApproach == 0) {
+            void* targetMethod = getFireDirectionMethod;
+            A64HookFunction(targetMethod, (void*)GhostSystems::Hooks::hook_GetFireDirection, (void**)&GhostSystems::Menu::hookedGetFireDirectionMethod);
+            silentAimStatus = OBFUSCATE("Hook GetFireDirection Ativo");
+        }
+
+        // Aplica hook no StartFiring se silentAimApproach == 1
+        if (startFiringMethod && !GhostSystems::Menu::hookedStartFiringMethod && silentAimEnabled && silentAimApproach == 1) {
+            void* targetMethod = startFiringMethod;
+            A64HookFunction(targetMethod, (void*)GhostSystems::Hooks::hook_StartFiring, (void**)&GhostSystems::Menu::hookedStartFiringMethod);
+            silentAimStatus = OBFUSCATE("Hook StartFiring Ativo");
         }
 
         if (!get_mainMethod || !worldToScreenMethod) return;
@@ -754,9 +886,9 @@ namespace GhostSystems {
         void* mainCamera = Il2Cpp::runtime_invoke(get_mainMethod, nullptr, nullptr, &exc);
         if (!mainCamera || exc) return;
 
-        ImDrawList* drawList = ImGui::GetBackgroundDrawList();
-        ImVec2 screenSize = ImGui::GetIO().DisplaySize;
-        ImVec2 screenCenter(screenSize.x / 2.0f, screenSize.y / 2.0f);
+        drawList = ImGui::GetBackgroundDrawList();
+        screenSize = ImGui::GetIO().DisplaySize;
+        screenCenter = ImVec2(screenSize.x / 2.0f, screenSize.y / 2.0f);
 
         // Desenha o circulo de FOV do Aimbot
         if (aimbotDrawFov || (silentAimEnabled && silentAimDrawDebug)) {
@@ -767,12 +899,12 @@ namespace GhostSystems {
 
         struct QuaternionArgs { float x, y, z, w; };
 
-        float closestAimbotDist = FLT_MAX;
-        ImVec2 bestTargetPos = screenCenter;
+        closestAimbotDist = FLT_MAX;
+        bestTargetPos = screenCenter;
         Vector3Args bestTargetWorldPosHead = {0, 0, 0};
         Vector3Args bestTargetWorldPosChest = {0, 0, 0};
-        bool foundAimbotTarget = false;
-        void* bestTargetObj = nullptr;
+        foundAimbotTarget = false;
+        bestTargetObj = nullptr;
 
         for (const auto& entity : localEntities) {
             // Ignora se estiver morto e o filtro de mortos estiver ativo (opcional, aqui pularemos mortos sempre pra nao poluir)
@@ -1134,7 +1266,6 @@ namespace GhostSystems {
                 }
             }
         }
-    }
 
         // DEBUG ESP/SKELETON DESATIVADO TEMPORARIAMENTE
         // if (espEnabled && isDebugMode) {
@@ -1186,10 +1317,10 @@ namespace GhostSystems {
         // Desenhar linha do Aimbot para o alvo travado
         aimbotHasTarget = foundAimbotTarget;
         if (!foundAimbotTarget) {
-            aimbotTargetName = "Nenhum";
+            aimbotTargetName = OBFUSCATE("Nenhum");
             aimbotTargetDistFOV = 0.0f;
             aimbotTargetDist3D = 0.0f;
-            aimbotErrorLog = "Buscando alvos no FOV...";
+            aimbotErrorLog = OBFUSCATE("Buscando alvos no FOV...");
         }
 
         // Debug visualization para alvos (sempre mostra se encontrou)
@@ -1205,90 +1336,41 @@ namespace GhostSystems {
                 shouldAim = false;
                 if (sharedState.localPlayerObj) {
                     bool isFiring = *(bool*)((uintptr_t)sharedState.localPlayerObj + 0x2E8);
-                    aimbotErrorLog = isFiring ? "Detectou tiro (isFiring=true)" : "Sem tiro (isFiring=false)";
+                    aimbotErrorLog = isFiring ? OBFUSCATE("Detectou tiro (isFiring=true)") : OBFUSCATE("Sem tiro (isFiring=false)");
                     if (isFiring) {
                         shouldAim = true;
                     }
                 } else {
-                    aimbotErrorLog = "localPlayerObj eh NULL";
+                    aimbotErrorLog = OBFUSCATE("localPlayerObj eh NULL");
                 }
-                if (!shouldAim) {
-                    // Continua para verificar Silent Aim
+
+                float deltaTime = ImGui::GetIO().DeltaTime;
+
+                bool delayPassed = false;
+                if (shouldAim && foundAimbotTarget) {
+                    wasAimingLastFrame = true;
+
+                    if (aimbotTargetTimeMap.find(bestTargetObj) == aimbotTargetTimeMap.end()) {
+                        aimbotTargetTimeMap[bestTargetObj] = 0.0f;
+                    }
+
+                    aimbotTargetTimeMap[bestTargetObj] += (deltaTime * 1000.0f);
+
+                    if (aimbotTargetTimeMap[bestTargetObj] >= aimbotSmoothTimeMs) {
+                        delayPassed = true;
+                    }
                 } else {
-                    // Lógica da Mira Magnética (Independente de atirar ou delay)
-                    if (aimbotMagnetic && getTransformMethod && getPosMethod && getRotMethod) {
-                        void* cameraTransform = Il2Cpp::runtime_invoke(getTransformMethod, mainCamera, nullptr, &exc);
-                        if (cameraTransform && !exc) {
-                            void* targetTransform = Il2Cpp::runtime_invoke(getTransformMethod, bestTargetObj, nullptr, &exc);
-                            if (targetTransform && !exc) {
-                                void* getForwardMethod = Il2Cpp::GetMethodRecursively(transformKlass, "get_forward", 0);
-                                if (getForwardMethod) {
-                                    void* forwardObj = Il2Cpp::runtime_invoke(getForwardMethod, cameraTransform, nullptr, &exc);
-                                    void* camPosObj = Il2Cpp::runtime_invoke(getPosMethod, cameraTransform, nullptr, &exc);
-                                    if (forwardObj && camPosObj && !exc) {
-                                        Vector3Args forward = *(Vector3Args*)((uintptr_t)forwardObj + 0x10);
-                                        Vector3Args camPos = *(Vector3Args*)((uintptr_t)camPosObj + 0x10);
-                                        
-                                        float magDist = aimbotTargetDist3D;
-                                        if (magDist < 1.0f) magDist = 1.0f;
-                                        
-                                        Vector3Args magneticPos = {
-                                            camPos.x + forward.x * magDist,
-                                            camPos.y + forward.y * magDist,
-                                            camPos.z + forward.z * magDist
-                                        };
-                                        
-                                        float heightOffset = bestTargetWorldPosHead.y - bestTargetWorldPosChest.y;
-                                        if (aimbotHitbox == 0) {
-                                            magneticPos = bestTargetWorldPosHead;
-                                        } else if (aimbotHitbox == 1) {
-                                            magneticPos = bestTargetWorldPosChest;
-                                            magneticPos.y += (heightOffset * 0.5f);
-                                        } else {
-                                            magneticPos = bestTargetWorldPosChest;
-                                        } 
+                    wasAimingLastFrame = false;
+                }
 
-                                        void* setPosMethod = Il2Cpp::GetMethodRecursively(transformKlass, "set_position", 1);
-                                        if (setPosMethod) {
-                                            void* argsSetPos[1] = { &magneticPos };
-                                            Il2Cpp::runtime_invoke(setPosMethod, targetTransform, argsSetPos, &exc);
-                                            if (!exc) {
-                                                aimbotErrorLog = "Inimigo puxado pela Mira Magnetica (Sempre Ativo)!";
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
+                if (shouldAim && foundAimbotTarget && getTransformMethod && getPosMethod && getRotMethod && setRotMethod && lookRotMethod) {
+
+                    for (auto it = aimbotTargetTimeMap.begin(); it != aimbotTargetTimeMap.end(); ) {
+                        if (it->first != bestTargetObj) it = aimbotTargetTimeMap.erase(it);
+                        else ++it;
                     }
 
-                    float deltaTime = ImGui::GetIO().DeltaTime;
-                    
-                    bool delayPassed = false;
-                    if (shouldAim && foundAimbotTarget) {
-                        wasAimingLastFrame = true;
-                        
-                        if (aimbotTargetTimeMap.find(bestTargetObj) == aimbotTargetTimeMap.end()) {
-                            aimbotTargetTimeMap[bestTargetObj] = 0.0f;
-                        }
-                        
-                        aimbotTargetTimeMap[bestTargetObj] += (deltaTime * 1000.0f);
-                        
-                        if (aimbotTargetTimeMap[bestTargetObj] >= aimbotSmoothTimeMs) {
-                            delayPassed = true;
-                        }
-                    } else {
-                        wasAimingLastFrame = false;
-                    }
-
-                    if (shouldAim && foundAimbotTarget && getTransformMethod && getPosMethod && getRotMethod && setRotMethod && lookRotMethod) {
-                        
-                        for (auto it = aimbotTargetTimeMap.begin(); it != aimbotTargetTimeMap.end(); ) {
-                            if (it->first != bestTargetObj) it = aimbotTargetTimeMap.erase(it);
-                            else ++it;
-                        }
-
-                        void* cameraTransform = Il2Cpp::runtime_invoke(getTransformMethod, mainCamera, nullptr, &exc);
+                    void* cameraTransform = Il2Cpp::runtime_invoke(getTransformMethod, mainCamera, nullptr, &exc);
                         if (cameraTransform && !exc) {
                             void* camPosObj = Il2Cpp::runtime_invoke(getPosMethod, cameraTransform, nullptr, &exc);
                             if (camPosObj && !exc) {
@@ -1349,7 +1431,7 @@ namespace GhostSystems {
                                         aimbotStrength *= (aimbotTargetTimeMap[bestTargetObj] / aimbotSmoothTimeMs);
                                     }
                                     
-                                    float t = aimbotStrength * 0.01f;
+                                    float t = aimbotStrength * 0.1f; // Aumentado 10x para ficar forte
                                     if (t > 1.0f) t = 1.0f;
                                     
                                     QuaternionArgs newRot = {
@@ -1381,7 +1463,7 @@ namespace GhostSystems {
                                         void* argsSetRot[1] = { &newRot };
                                         Il2Cpp::runtime_invoke(setRotMethod, cameraTransform, argsSetRot, &exc);
                                         if (!exc) {
-                                            aimbotErrorLog = "Aim FOV (set_rotation camera)";
+                                            aimbotErrorLog = OBFUSCATE("Aim FOV (set_rotation camera)");
                                         }
                                     }
                                 }
@@ -1389,97 +1471,23 @@ namespace GhostSystems {
                         }
                     }
                 }
-            } else if (aimbotMode == 1) { // Aimlock (Sempre ativo quando aimbotEnabled)
-                // Lógica da Mira Magnética
-                if (aimbotMagnetic && getTransformMethod && getPosMethod && getRotMethod) {
-                    void* cameraTransform = Il2Cpp::runtime_invoke(getTransformMethod, mainCamera, nullptr, &exc);
-                    if (cameraTransform && !exc) {
-                        void* targetTransform = Il2Cpp::runtime_invoke(getTransformMethod, bestTargetObj, nullptr, &exc);
-                        if (targetTransform && !exc) {
-                            void* getForwardMethod = Il2Cpp::GetMethodRecursively(transformKlass, "get_forward", 0);
-                            if (getForwardMethod) {
-                                void* forwardObj = Il2Cpp::runtime_invoke(getForwardMethod, cameraTransform, nullptr, &exc);
-                                void* camPosObj = Il2Cpp::runtime_invoke(getPosMethod, cameraTransform, nullptr, &exc);
-                                if (forwardObj && camPosObj && !exc) {
-                                    Vector3Args forward = *(Vector3Args*)((uintptr_t)forwardObj + 0x10);
-                                    Vector3Args camPos = *(Vector3Args*)((uintptr_t)camPosObj + 0x10);
-                                    
-                                    float magDist = aimbotTargetDist3D;
-                                    if (magDist < 1.0f) magDist = 1.0f;
-                                    
-                                    Vector3Args magneticPos = {
-                                        camPos.x + forward.x * magDist,
-                                        camPos.y + forward.y * magDist,
-                                        camPos.z + forward.z * magDist
-                                    };
-                                    
-                                    float heightOffset = bestTargetWorldPosHead.y - bestTargetWorldPosChest.y;
-                                    if (aimbotHitbox == 0) {
-                                        magneticPos = bestTargetWorldPosHead;
-                                    } else if (aimbotHitbox == 1) {
-                                        magneticPos = bestTargetWorldPosChest;
-                                        magneticPos.y += (heightOffset * 0.5f);
-                                    } else {
-                                        magneticPos = bestTargetWorldPosChest;
-                                    } 
-
-                                    void* setPosMethod = Il2Cpp::GetMethodRecursively(transformKlass, "set_position", 1);
-                                    if (setPosMethod) {
-                                        void* argsSetPos[1] = { &magneticPos };
-                                        Il2Cpp::runtime_invoke(setPosMethod, targetTransform, argsSetPos, &exc);
-                                        if (!exc) {
-                                            aimbotErrorLog = "Inimigo puxado pela Mira Magnetica (Sempre Ativo)!";
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-
-                float deltaTime = ImGui::GetIO().DeltaTime;
-                
-                bool delayPassed = true; // Aimlock não tem delay
-                if (foundAimbotTarget) {
-                    wasAimingLastFrame = true;
-                    aimbotTargetTimeMap[bestTargetObj] = aimbotSmoothTimeMs;
-                } else {
-                    wasAimingLastFrame = false;
-                }
-
-                if (foundAimbotTarget && getTransformMethod && getPosMethod && getRotMethod && setRotMethod && lookRotMethod) {
-                    
-                    for (auto it = aimbotTargetTimeMap.begin(); it != aimbotTargetTimeMap.end(); ) {
-                        if (it->first != bestTargetObj) it = aimbotTargetTimeMap.erase(it);
-                        else ++it;
-                    }
-
+            } else if (aimbotMode == 1) {
+                if (aimbotMagnetic && getTransformMethod && getPosMethod && getRotMethod && setRotMethod && lookRotMethod) {
                     void* cameraTransform = Il2Cpp::runtime_invoke(getTransformMethod, mainCamera, nullptr, &exc);
                     if (cameraTransform && !exc) {
                         void* camPosObj = Il2Cpp::runtime_invoke(getPosMethod, cameraTransform, nullptr, &exc);
-                        if (camPosObj && !exc) {
+                        void* camRotObj = Il2Cpp::runtime_invoke(getRotMethod, cameraTransform, nullptr, &exc);
+                        if (camPosObj && camRotObj && !exc) {
                             Vector3Args camPos = *(Vector3Args*)((uintptr_t)camPosObj + 0x10);
-                            
-                            aimbotCamPosX = camPos.x;
-                            aimbotCamPosY = camPos.y;
-                            aimbotCamPosZ = camPos.z;
-
-                            void* camRotObj = Il2Cpp::runtime_invoke(getRotMethod, cameraTransform, nullptr, &exc);
-                            if (camRotObj && !exc) {
-                                QuaternionArgs camRot = *(QuaternionArgs*)((uintptr_t)camRotObj + 0x10);
-                                aimbotCamRotX = camRot.x;
-                                aimbotCamRotY = camRot.y;
-                                aimbotCamRotZ = camRot.z;
-                                aimbotCamRotW = camRot.w;
-                            }
+                            QuaternionArgs camRot = *(QuaternionArgs*)((uintptr_t)camRotObj + 0x10);
 
                             Vector3Args finalHitboxPos;
+                            float heightDiff = bestTargetWorldPosHead.y - bestTargetWorldPosChest.y;
                             if (aimbotHitbox == 0) {
                                 finalHitboxPos = bestTargetWorldPosHead;
-                            } else if (aimbotHitbox == 1) {
-                                finalHitboxPos = bestTargetWorldPosChest;
                             } else {
                                 finalHitboxPos = bestTargetWorldPosChest;
+                                finalHitboxPos.y += (heightDiff * 0.5f);
                             }
 
                             Vector3Args dir = {
@@ -1493,61 +1501,37 @@ namespace GhostSystems {
                                 dir.x /= mag;
                                 dir.y /= mag;
                                 dir.z /= mag;
-                            }
 
-                            void* argsRot[1] = { &dir };
-                            void* targetRotObj = Il2Cpp::runtime_invoke(lookRotMethod, nullptr, argsRot, &exc);
-                            if (targetRotObj && !exc) {
-                                QuaternionArgs targetRot = *(QuaternionArgs*)((uintptr_t)targetRotObj + 0x10);
-                                
-                                QuaternionArgs currentRot = { aimbotCamRotX, aimbotCamRotY, aimbotCamRotZ, aimbotCamRotW };
-                                
-                                float currentMag = sqrt(currentRot.x * currentRot.x + currentRot.y * currentRot.y + currentRot.z * currentRot.z + currentRot.w * currentRot.w);
-                                if (currentMag > 0.001f) {
-                                    currentRot.x /= currentMag;
-                                    currentRot.y /= currentMag;
-                                    currentRot.z /= currentMag;
-                                    currentRot.w /= currentMag;
-                                }
-                                
-                                float aimbotStrength = aimbotPullStrength;
-                                if (!delayPassed) {
-                                    aimbotStrength *= (aimbotTargetTimeMap[bestTargetObj] / aimbotSmoothTimeMs);
-                                }
-                                
-                                float t = aimbotStrength * 0.01f;
-                                if (t > 1.0f) t = 1.0f;
-                                
-                                QuaternionArgs newRot = {
-                                    currentRot.x + (targetRot.x - currentRot.x) * t,
-                                    currentRot.y + (targetRot.y - currentRot.y) * t,
-                                    currentRot.z + (targetRot.z - currentRot.z) * t,
-                                    currentRot.w + (targetRot.w - currentRot.w) * t
-                                };
-                                
-                                float newMag = sqrt(newRot.x * newRot.x + newRot.y * newRot.y + newRot.z * newRot.z + newRot.w * newRot.w);
-                                if (newMag > 0.001f) {
-                                    newRot.x /= newMag;
-                                    newRot.y /= newMag;
-                                    newRot.z /= newMag;
-                                    newRot.w /= newMag;
-                                }
-                                
-                                bool aimSetSuccess = false;
-                                if (setAimRotationMethod && sharedState.localPlayerObj) {
-                                    bool isTrue = true;
-                                    void* argsAim[2] = { &newRot, &isTrue };
-                                    Il2Cpp::runtime_invoke(setAimRotationMethod, sharedState.localPlayerObj, argsAim, &exc);
-                                    if (!exc) {
-                                        aimSetSuccess = true;
+                                void* argsRot[1] = { &dir };
+                                void* targetRotObj = Il2Cpp::runtime_invoke(lookRotMethod, nullptr, argsRot, &exc);
+                                if (targetRotObj && !exc) {
+                                    QuaternionArgs targetRot = *(QuaternionArgs*)((uintptr_t)targetRotObj + 0x10);
+                                    float currentMag = sqrt(camRot.x * camRot.x + camRot.y * camRot.y + camRot.z * camRot.z + camRot.w * camRot.w);
+                                    if (currentMag > 0.001f) {
+                                        camRot.x /= currentMag;
+                                        camRot.y /= currentMag;
+                                        camRot.z /= currentMag;
+                                        camRot.w /= currentMag;
                                     }
-                                }
-                                
-                                if (!aimSetSuccess && setRotMethod && cameraTransform) {
+                                    float t = aimbotPullStrength * 0.1f; // Aumentado 10x para ficar forte
+                                    if (t > 1.0f) t = 1.0f;
+                                    QuaternionArgs newRot = {
+                                        camRot.x + (targetRot.x - camRot.x) * t,
+                                        camRot.y + (targetRot.y - camRot.y) * t,
+                                        camRot.z + (targetRot.z - camRot.z) * t,
+                                        camRot.w + (targetRot.w - camRot.w) * t
+                                    };
+                                    float newMag = sqrt(newRot.x * newRot.x + newRot.y * newRot.y + newRot.z * newRot.z + newRot.w * newRot.w);
+                                    if (newMag > 0.001f) {
+                                        newRot.x /= newMag;
+                                        newRot.y /= newMag;
+                                        newRot.z /= newMag;
+                                        newRot.w /= newMag;
+                                    }
                                     void* argsSetRot[1] = { &newRot };
                                     Il2Cpp::runtime_invoke(setRotMethod, cameraTransform, argsSetRot, &exc);
                                     if (!exc) {
-                                        aimbotErrorLog = "Aim FOV (set_rotation camera)";
+                                        aimbotErrorLog = OBFUSCATE("Aimlock ativo");
                                     }
                                 }
                             }
@@ -1561,17 +1545,25 @@ namespace GhostSystems {
         if (silentAimEnabled && sharedState.localPlayerObj && foundAimbotTarget) {
             bool isFiring = *(bool*)((uintptr_t)sharedState.localPlayerObj + 0x2E8);
             if (!isFiring) {
-                silentAimStatus = "Aguardando tiro...";
+                silentAimStatus = OBFUSCATE("Aguardando tiro...");
             } else {
-                silentAimStatus = "Silent Aim ATIVO";
+                silentAimStatus = OBFUSCATE("Silent Aim ATIVO");
 
                 switch (silentAimApproach) {
                     case 0: {
-                        silentAimStatus = "Hook GetFireDirection (requer hook)";
+                        if (GhostSystems::Menu::hookedGetFireDirectionMethod) {
+                            silentAimStatus = OBFUSCATE("BALA CURVADA (Trajetória MODIFICADA)");
+                        } else {
+                            silentAimStatus = OBFUSCATE("Hook GetFireDirection (Bala Curvada)");
+                        }
                         break;
                     }
                     case 1: {
-                        silentAimStatus = "Hook StartFiring (requer hook)";
+                        if (GhostSystems::Menu::hookedStartFiringMethod) {
+                            silentAimStatus = OBFUSCATE("Silent Aim (StartFiring) ATIVO");
+                        } else {
+                            silentAimStatus = OBFUSCATE("Hook StartFiring aplicado");
+                        }
                         break;
                     }
                     case 2: {
@@ -1642,7 +1634,7 @@ namespace GhostSystems {
                                             void* argsAim[2] = { &newRot, &isTrue };
                                             Il2Cpp::runtime_invoke(setAimRotationMethod, sharedState.localPlayerObj, argsAim, &exc);
                                             if (!exc) {
-                                                silentAimStatus = "Silent Aim: LookAtPosition OK";
+                                                silentAimStatus = OBFUSCATE("Silent Aim: LookAtPosition OK");
                                             }
                                         }
                                     }
@@ -1652,11 +1644,11 @@ namespace GhostSystems {
                         break;
                     }
                     case 3: {
-                        silentAimStatus = "GetLookDirection (requer hook)";
+                        silentAimStatus = OBFUSCATE("GetLookDirection (requer hook)");
                         break;
                     }
                     case 4: {
-                        silentAimStatus = "Raycast Predicativo (beta)";
+                        silentAimStatus = OBFUSCATE("Raycast Predicativo (beta)");
 
                         if (lookRotMethod && getTransformMethod && sharedState.localPlayerObj && getPosMethod) {
                             void* exc = nullptr;
@@ -1702,7 +1694,7 @@ namespace GhostSystems {
                                             void* argsAim[2] = { &targetRot, &isTrue };
                                             Il2Cpp::runtime_invoke(setAimRotationMethod, sharedState.localPlayerObj, argsAim, &exc);
                                             if (!exc) {
-                                                silentAimStatus = "Silent Aim: Predicao OK";
+                                                silentAimStatus = OBFUSCATE("Silent Aim: Predicao OK");
                                             }
                                         }
                                     }
@@ -1712,7 +1704,7 @@ namespace GhostSystems {
                         break;
                     }
                     case 5: {
-                        silentAimStatus = "Modificar Rotacao Player";
+                        silentAimStatus = OBFUSCATE("Modificar Rotacao Player");
 
                         if (lookRotMethod && getTransformMethod && sharedState.localPlayerObj && getPosMethod) {
                             void* exc = nullptr;
@@ -1756,7 +1748,7 @@ namespace GhostSystems {
                                             void* argsAim[2] = { &targetRot, &isTrue };
                                             Il2Cpp::runtime_invoke(setAimRotationMethod, sharedState.localPlayerObj, argsAim, &exc);
                                             if (!exc) {
-                                                silentAimStatus = "Silent Aim: Rotacao OK";
+                                                silentAimStatus = OBFUSCATE("Silent Aim: Rotacao OK");
                                             }
                                         }
                                     }
@@ -1766,7 +1758,7 @@ namespace GhostSystems {
                         break;
                     }
                     default:
-                        silentAimStatus = "Abordagem invalida";
+                        silentAimStatus = OBFUSCATE("Abordagem invalida");
                         break;
                 }
 
@@ -1776,19 +1768,23 @@ namespace GhostSystems {
                     drawList->AddLine(screenCenter, targetScreen, IM_COL32(255, 255, 0, 100), 1.0f);
                 }
             }
-        } else {
-            silentAimStatus = "Inativo";
+        }
+        
+        if (!silentAimEnabled || !sharedState.localPlayerObj || !foundAimbotTarget) {
+            silentAimStatus = OBFUSCATE("Inativo");
         }
 
         // --- INFJUMP LOGIC ---
         if (infJumpEnabled && sharedState.localPlayerObj && getTransformMethod && getPosMethod && setPosMethod) {
             ImGui::SetNextWindowPos(ImVec2(100, 100), ImGuiCond_FirstUseEver);
-            if (ImGui::Begin("InfJump Controls", nullptr, ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoTitleBar)) {
-                ImGui::TextColored(ImVec4(1, 1, 0, 1), "InfJump (Arraste aqui)");
+            if (ImGui::Begin(OBFUSCATE("InfJump Controls"), nullptr, ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoTitleBar)) {
+                ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1, 1, 0, 1));
+                ImGui::Text("%s", OBFUSCATE("InfJump (Arraste aqui)"));
+                ImGui::PopStyleColor();
                 
-                bool jumpUp = ImGui::Button("SUBIR (UP)", ImVec2(100, 60));
+                bool jumpUp = ImGui::Button(OBFUSCATE("SUBIR (UP)"), ImVec2(100, 60));
                 ImGui::SameLine();
-                bool jumpDown = ImGui::Button("DESCER (DN)", ImVec2(100, 60));
+                bool jumpDown = ImGui::Button(OBFUSCATE("DESCER (DN)"), ImVec2(100, 60));
                 
                 if (jumpUp || jumpDown) {
                     void* exc = nullptr;
@@ -1810,4 +1806,340 @@ namespace GhostSystems {
         }
     }
 
+    struct HookQuaternionArgs { float x, y, z, w; };
+
+    namespace Hooks {
+        bool hook_IsFiring(void* playerObj, void* exc) {
+            if (!playerObj || exc) {
+                typedef bool (*origFunc_t)(void*, void*);
+                static origFunc_t origFunc = (origFunc_t)GhostSystems::Menu::hookedIsFiringMethod;
+                return origFunc(playerObj, exc);
+            }
+
+            GhostSystems::Menu* menu = GhostSystems::Menu::menuInstance;
+            if (!menu) {
+                typedef bool (*origFunc_t)(void*, void*);
+                static origFunc_t origFunc = (origFunc_t)GhostSystems::Menu::hookedIsFiringMethod;
+                return origFunc(playerObj, exc);
+            }
+
+            if (menu->silentAimEnabled && menu->sharedState.localPlayerObj && playerObj == menu->sharedState.localPlayerObj) {
+                if (menu->setAimRotationMethod && menu->lookRotMethod && menu->getTransformMethod && menu->getPosMethod && menu->getHeadTFMethod) {
+                    std::vector<GhostSystems::PlayerEntity> localEntities;
+                    {
+                        std::lock_guard<std::mutex> lock(menu->sharedState.mtx);
+                        localEntities = menu->sharedState.entities;
+                    }
+
+                    if (!localEntities.empty()) {
+                        void* localTransform = Il2Cpp::runtime_invoke(menu->getTransformMethod, menu->sharedState.localPlayerObj, nullptr, &exc);
+                        if (localTransform && !exc) {
+                            void* localPosObj = Il2Cpp::runtime_invoke(menu->getPosMethod, localTransform, nullptr, &exc);
+                            if (localPosObj && !exc) {
+                                HookVector3Args localPos = *(HookVector3Args*)((uintptr_t)localPosObj + 0x10);
+
+                                float closestDist = FLT_MAX;
+                                HookVector3Args bestTargetPosHead = {0, 0, 0};
+                                HookVector3Args bestTargetPosChest = {0, 0, 0};
+
+                                for (const auto& entity : localEntities) {
+                                    if (!entity.isAlive()) continue;
+                                    if (!menu->aimbotTargetAllies && entity.teamId == menu->sharedState.localPlayerTeamId) continue;
+
+                                    float dist3D = sqrt(pow(entity.position.x - localPos.x, 2) +
+                                                       pow(entity.position.y - localPos.y, 2) +
+                                                       pow(entity.position.z - localPos.z, 2));
+                                    if (dist3D > menu->silentAimMaxDistance) continue;
+
+                                    if (dist3D < closestDist) {
+                                        closestDist = dist3D;
+
+                                        bestTargetPosChest = { entity.position.x, entity.position.y, entity.position.z };
+
+                                        if (entity.obj) {
+                                            void* headTransform = Il2Cpp::runtime_invoke(menu->getHeadTFMethod, entity.obj, nullptr, &exc);
+                                            if (headTransform && !exc) {
+                                                void* headPosObj = Il2Cpp::runtime_invoke(menu->getPosMethod, headTransform, nullptr, &exc);
+                                                if (headPosObj && !exc) {
+                                                    bestTargetPosHead = *(HookVector3Args*)((uintptr_t)headPosObj + 0x10);
+                                                }
+                                            }
+                                        }
+
+                                        if (bestTargetPosHead.x == 0 && bestTargetPosHead.y == 0 && bestTargetPosHead.z == 0) {
+                                            bestTargetPosHead = { entity.position.x, entity.position.y + 1.41f, entity.position.z };
+                                        }
+                                    }
+                                }
+
+                                if (closestDist < FLT_MAX) {
+                                    HookVector3Args targetPos;
+                                    if (menu->aimbotHitbox == 0) {
+                                        targetPos = bestTargetPosHead;
+                                    } else {
+                                        targetPos = bestTargetPosChest;
+                                        float heightDiff = bestTargetPosHead.y - bestTargetPosChest.y;
+                                        targetPos.y += (heightDiff * 0.5f);
+                                    }
+
+                                    HookVector3Args dir = {
+                                        targetPos.x - localPos.x,
+                                        targetPos.y - localPos.y,
+                                        targetPos.z - localPos.z
+                                    };
+
+                                    float mag = sqrt(dir.x * dir.x + dir.y * dir.y + dir.z * dir.z);
+                                    if (mag > 0.001f) {
+                                        dir.x /= mag;
+                                        dir.y /= mag;
+                                        dir.z /= mag;
+
+                                        void* argsRot[1] = { &dir };
+                                        void* targetRotObj = Il2Cpp::runtime_invoke(menu->lookRotMethod, nullptr, argsRot, &exc);
+                                        if (targetRotObj && !exc) {
+                                            HookQuaternionArgs targetRot = *(HookQuaternionArgs*)((uintptr_t)targetRotObj + 0x10);
+                                            bool isTrue = true;
+                                            void* argsAim[2] = { &targetRot, &isTrue };
+                                            Il2Cpp::runtime_invoke(menu->setAimRotationMethod, menu->sharedState.localPlayerObj, argsAim, &exc);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            typedef bool (*origFunc_t)(void*, void*);
+            static origFunc_t origFunc = (origFunc_t)GhostSystems::Menu::hookedIsFiringMethod;
+            return origFunc(playerObj, exc);
+        }
+
+        void* hook_GetFireDirection(void* playerObj, bool* isSkill) {
+            typedef void* (*origFunc_t)(void*, bool*, void*);
+            static origFunc_t origFunc = (origFunc_t)GhostSystems::Menu::hookedGetFireDirectionMethod;
+            void* exc = nullptr;
+            
+            void* original_dir = origFunc(playerObj, isSkill, &exc);
+
+            GhostSystems::Menu* menu = GhostSystems::Menu::menuInstance;
+            if (!menu) return original_dir;
+
+            if (menu->silentAimEnabled && menu->sharedState.localPlayerObj && playerObj == menu->sharedState.localPlayerObj && menu->silentAimApproach == 0) {
+                if (menu->getTransformMethod && menu->getPosMethod && menu->getHeadTFMethod) {
+                    std::vector<GhostSystems::PlayerEntity> localEntities;
+                    {
+                        std::lock_guard<std::mutex> lock(menu->sharedState.mtx);
+                        localEntities = menu->sharedState.entities;
+                    }
+
+                    if (!localEntities.empty()) {
+                        void* localTransform = Il2Cpp::runtime_invoke(menu->getTransformMethod, menu->sharedState.localPlayerObj, nullptr, &exc);
+                        if (localTransform && !exc) {
+                            void* localPosObj = Il2Cpp::runtime_invoke(menu->getPosMethod, localTransform, nullptr, &exc);
+                            if (localPosObj && !exc) {
+                                HookVector3Args localPos = *(HookVector3Args*)((uintptr_t)localPosObj + 0x10);
+
+                                float closestDist = FLT_MAX;
+                                HookVector3Args bestTargetPosHead = {0, 0, 0};
+                                HookVector3Args bestTargetPosChest = {0, 0, 0};
+
+                                for (const auto& entity : localEntities) {
+                                    if (!entity.isAlive()) continue;
+                                    if (!menu->aimbotTargetAllies && entity.teamId == menu->sharedState.localPlayerTeamId) continue;
+
+                                    float dist3D = sqrt(pow(entity.position.x - localPos.x, 2) +
+                                                       pow(entity.position.y - localPos.y, 2) +
+                                                       pow(entity.position.z - localPos.z, 2));
+                                    if (dist3D > menu->silentAimMaxDistance) continue;
+
+                                    if (dist3D < closestDist) {
+                                        closestDist = dist3D;
+                                        bestTargetPosChest = { entity.position.x, entity.position.y, entity.position.z };
+
+                                        if (entity.obj) {
+                                            void* headTransform = Il2Cpp::runtime_invoke(menu->getHeadTFMethod, entity.obj, nullptr, &exc);
+                                            if (headTransform && !exc) {
+                                                void* headPosObj = Il2Cpp::runtime_invoke(menu->getPosMethod, headTransform, nullptr, &exc);
+                                                if (headPosObj && !exc) {
+                                                    bestTargetPosHead = *(HookVector3Args*)((uintptr_t)headPosObj + 0x10);
+                                                }
+                                            }
+                                        }
+
+                                        if (bestTargetPosHead.x == 0 && bestTargetPosHead.y == 0 && bestTargetPosHead.z == 0) {
+                                            bestTargetPosHead = { entity.position.x, entity.position.y + 1.41f, entity.position.z };
+                                        }
+                                    }
+                                }
+
+                                if (closestDist < FLT_MAX) {
+                                    HookVector3Args targetPos;
+                                    if (menu->aimbotHitbox == 0) {
+                                        targetPos = bestTargetPosHead;
+                                    } else {
+                                        targetPos = bestTargetPosChest;
+                                        float heightDiff = bestTargetPosHead.y - bestTargetPosChest.y;
+                                        targetPos.y += (heightDiff * 0.5f);
+                                    }
+
+                                    HookVector3Args dir = {
+                                        targetPos.x - localPos.x,
+                                        targetPos.y - localPos.y,
+                                        targetPos.z - localPos.z
+                                    };
+
+                                    float mag = sqrt(dir.x * dir.x + dir.y * dir.y + dir.z * dir.z);
+                                    if (mag > 0.001f) {
+                                        dir.x /= mag;
+                                        dir.y /= mag;
+                                        dir.z /= mag;
+                                        
+                                        if (menu->lookRotMethod && menu->setAimRotationMethod) {
+                                            void* argsRot[1] = { &dir };
+                                            void* targetRotObj = Il2Cpp::runtime_invoke(menu->lookRotMethod, nullptr, argsRot, &exc);
+                                            if (targetRotObj && !exc) {
+                                                HookQuaternionArgs targetRot = *(HookQuaternionArgs*)((uintptr_t)targetRotObj + 0x10);
+                                                bool isTrue = true;
+                                                void* argsAim[2] = { &targetRot, &isTrue };
+                                                Il2Cpp::runtime_invoke(menu->setAimRotationMethod, menu->sharedState.localPlayerObj, argsAim, &exc);
+                                                menu->silentAimStatus = OBFUSCATE("BALA CURVADA (Rotação Modificada!)");
+                                            }
+                                        }
+                                        
+                                        // Modifica o vetor original (se for um objeto contendo Vector3 no offset 0x10)
+                                        if (original_dir) {
+                                            HookVector3Args* outDir = (HookVector3Args*)((uintptr_t)original_dir + 0x10);
+                                            outDir->x = dir.x;
+                                            outDir->y = dir.y;
+                                            outDir->z = dir.z;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            return original_dir;
+        }
+
+        void hook_StartFiring(void* playerObj, void* weaponObj) {
+            if (!playerObj || !weaponObj) {
+                typedef void (*origFunc_t)(void*, void*, void*);
+                static origFunc_t origFunc = (origFunc_t)GhostSystems::Menu::hookedStartFiringMethod;
+                void* exc = nullptr;
+                origFunc(playerObj, weaponObj, &exc);
+                return;
+            }
+
+            GhostSystems::Menu* menu = GhostSystems::Menu::menuInstance;
+            if (!menu) {
+                typedef void (*origFunc_t)(void*, void*, void*);
+                static origFunc_t origFunc = (origFunc_t)GhostSystems::Menu::hookedStartFiringMethod;
+                void* exc = nullptr;
+                origFunc(playerObj, weaponObj, &exc);
+                return;
+            }
+
+            if (menu->silentAimEnabled && menu->sharedState.localPlayerObj && playerObj == menu->sharedState.localPlayerObj && menu->silentAimApproach == 1) {
+                if (menu->setAimRotationMethod && menu->lookRotMethod && menu->getTransformMethod && menu->getPosMethod && menu->getHeadTFMethod) {
+                    std::vector<GhostSystems::PlayerEntity> localEntities;
+                    {
+                        std::lock_guard<std::mutex> lock(menu->sharedState.mtx);
+                        localEntities = menu->sharedState.entities;
+                    }
+
+                    if (!localEntities.empty()) {
+                        void* exc = nullptr;
+                        void* localTransform = Il2Cpp::runtime_invoke(menu->getTransformMethod, menu->sharedState.localPlayerObj, nullptr, &exc);
+                        if (localTransform && !exc) {
+                            void* localPosObj = Il2Cpp::runtime_invoke(menu->getPosMethod, localTransform, nullptr, &exc);
+                            if (localPosObj && !exc) {
+                                HookVector3Args localPos = *(HookVector3Args*)((uintptr_t)localPosObj + 0x10);
+
+                                float closestDist = FLT_MAX;
+                                HookVector3Args bestTargetPosHead = {0, 0, 0};
+                                HookVector3Args bestTargetPosChest = {0, 0, 0};
+
+                                for (const auto& entity : localEntities) {
+                                    if (!entity.isAlive()) continue;
+                                    if (!menu->aimbotTargetAllies && entity.teamId == menu->sharedState.localPlayerTeamId) continue;
+
+                                    float dist3D = sqrt(pow(entity.position.x - localPos.x, 2) +
+                                                       pow(entity.position.y - localPos.y, 2) +
+                                                       pow(entity.position.z - localPos.z, 2));
+                                    if (dist3D > menu->silentAimMaxDistance) continue;
+
+                                    if (dist3D < closestDist) {
+                                        closestDist = dist3D;
+                                        bestTargetPosChest = { entity.position.x, entity.position.y, entity.position.z };
+
+                                        if (entity.obj) {
+                                            void* headTransform = Il2Cpp::runtime_invoke(menu->getHeadTFMethod, entity.obj, nullptr, &exc);
+                                            if (headTransform && !exc) {
+                                                void* headPosObj = Il2Cpp::runtime_invoke(menu->getPosMethod, headTransform, nullptr, &exc);
+                                                if (headPosObj && !exc) {
+                                                    bestTargetPosHead = *(HookVector3Args*)((uintptr_t)headPosObj + 0x10);
+                                                }
+                                            }
+                                        }
+
+                                        if (bestTargetPosHead.x == 0 && bestTargetPosHead.y == 0 && bestTargetPosHead.z == 0) {
+                                            bestTargetPosHead = { entity.position.x, entity.position.y + 1.41f, entity.position.z };
+                                        }
+                                    }
+                                }
+
+                                if (closestDist < FLT_MAX) {
+                                    HookVector3Args targetPos;
+                                    if (menu->aimbotHitbox == 0) {
+                                        targetPos = bestTargetPosHead;
+                                    } else {
+                                        targetPos = bestTargetPosChest;
+                                        float heightDiff = bestTargetPosHead.y - bestTargetPosChest.y;
+                                        targetPos.y += (heightDiff * 0.5f);
+                                    }
+
+                                    HookVector3Args dir = {
+                                        targetPos.x - localPos.x,
+                                        targetPos.y - localPos.y,
+                                        targetPos.z - localPos.z
+                                    };
+
+                                    float mag = sqrt(dir.x * dir.x + dir.y * dir.y + dir.z * dir.z);
+                                    if (mag > 0.001f) {
+                                        dir.x /= mag;
+                                        dir.y /= mag;
+                                        dir.z /= mag;
+
+                                        void* argsRot[1] = { &dir };
+                                        void* targetRotObj = Il2Cpp::runtime_invoke(menu->lookRotMethod, nullptr, argsRot, &exc);
+                                        if (targetRotObj && !exc) {
+                                            HookQuaternionArgs targetRot = *(HookQuaternionArgs*)((uintptr_t)targetRotObj + 0x10);
+                                            bool isTrue = true;
+                                            void* argsAim[2] = { &targetRot, &isTrue };
+                                            Il2Cpp::runtime_invoke(menu->setAimRotationMethod, menu->sharedState.localPlayerObj, argsAim, &exc);
+                                            menu->silentAimStatus = OBFUSCATE("Silent Aim (StartFiring) ATIVO");
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            typedef void (*origFunc_t)(void*, void*, void*);
+            static origFunc_t origFunc = (origFunc_t)GhostSystems::Menu::hookedStartFiringMethod;
+            void* exc = nullptr;
+            origFunc(playerObj, weaponObj, &exc);
+            return;
+        }
+    }
+
+    // =============================================
+    // NOVOS HOOKS PARA BALÍSTICA AVANÇADA
+    // =============================================
 } // namespace GhostSystems
