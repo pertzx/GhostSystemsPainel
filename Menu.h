@@ -26,6 +26,28 @@ namespace GhostSystems {
         static void* hookedFireProjectileMethod;
         static void* hookedGetShotDirectionMethod;
         static void* hookedApplyBulletForceMethod;
+
+        // Hooks para Fake Lag e Animation
+        static void* hookedSetIsLagMethod;
+        static void* hookedSetIsPauseAnimMethod;
+        static void* hookedStopFireMethod;
+        static void* hookedGetWeaponOnHandMethod;
+        static void* hookedGetWeaponTypeMethod;
+        static void* hookedGetWeaponSubTypeMethod;
+        static void* hookedGetHeadTFMethod;
+        static void* hookedGetHipTFMethod;
+        static void* hookedGetLeftAnkleTFMethod;
+        static void* hookedGetRightAnkleTFMethod;
+        static void* hookedGetLeftToeTFMethod;
+        static void* hookedGetRightToeTFMethod;
+        static void* hookedIsVisibleMethod;
+        static void* hookedGetKillCountMethod;
+        static void* hookedGetDeathCountMethod;
+        static void* hookedGetFootballGameTeamIDMethod;
+        static void* hookedStartDashSpeedLerpMethod;
+        static void* hookedGetCurrentDashSpeedMethod;
+        static void* hookedGetExtraSpeedMethod;
+
         static bool isFiringHookActive;
         static bool pendingSilentAim;
         static Menu* menuInstance;
@@ -106,7 +128,58 @@ float aimbotPullStrength = 1.5f; // Força base do aimbot (aumentada pra ficar m
 float aimbotSmoothTimeMs = 30.0f; // Tempo de transição peito -> alvo configurado (Valor inicial forte/baixo)
 float aimbotSmoothCurve = 3.0f; // Curva de aceleração da puxada
 
-std::unordered_map<void*, float> aimbotTargetTimeMap; // Guarda o tempo de foco por entidade
+    public:
+        std::unordered_map<void*, float> aimbotTargetTimeMap; // Guarda o tempo de foco por entidade
+
+        // Fake Lag System
+        bool fakeLagEnabled = false;
+        int fakeLagIntensity = 50;
+        int fakeLagDurationMs = 200;
+        bool fakeLagActive = false;
+        float fakeLagTimer = 0.0f;
+        int fakeLagPacketLoss = 0;
+
+        // Weapon Monitor System
+        bool weaponMonitorEnabled = true;
+        struct WeaponInfo {
+            std::string weaponName;
+            int weaponType;
+            int weaponSubType;
+            bool isEquipped;
+        };
+        std::unordered_map<void*, WeaponInfo> playerWeapons;
+
+        // Animation Freeze System
+        bool animationFreezeEnabled = false;
+        bool animationFrozen = false;
+        int frozenFrame = 0;
+
+        // Fall Speed / Gravity System
+        bool fallSpeedEnabled = false;
+        float fallSpeedMultiplier = 1.0f;
+        float gravityMultiplier = 1.0f;
+
+        // ESP Enhancements
+        bool espShowKills = true;
+        bool espShowDeaths = true;
+        bool espShowWeapon = true;
+        bool espShowTeamId = true;
+        bool espShowBones = false;
+        bool espShowVehicle = false;
+        bool espShowBotBadge = true;
+
+        // Dash System
+        bool dashEnabled = false;
+        float dashSpeedMultiplier = 1.0f;
+        float dashActiveTime = 0.0f;
+
+        // Team Differentiation Colors
+        float teamColorR = 0.0f;
+        float teamColorG = 1.0f;
+        float teamColorB = 0.0f;
+        float enemyColorR = 1.0f;
+        float enemyColorG = 0.0f;
+        float enemyColorB = 0.0f;
 
         // Variaveis de Debug Aimbot
         bool aimbotHasTarget = false;
@@ -156,7 +229,22 @@ std::unordered_map<void*, float> aimbotTargetTimeMap; // Guarda o tempo de foco 
     namespace Hooks {
         bool hook_IsFiring(void* playerObj, void* exc);
         void* hook_GetFireDirection(void* playerObj, bool* isSkill);
-        void hook_StartFiring(void* playerObj, void* weaponObj);
+        void* hook_GetWeaponOnHand(void* playerObj, void* exc);
+        void* hook_GetWeaponType(void* playerObj, void* exc);
+        int32_t hook_GetWeaponSubType(void* playerObj, void* exc);
+        void hook_SetIsLag(void* playerObj, bool isLag, void* exc);
+        void hook_SetIsPauseAnim(void* playerObj, bool isPause, void* exc);
+        void* hook_GetHeadTransform(void* playerObj, void* exc);
+        void* hook_GetHipTransform(void* playerObj, void* exc);
+        bool hook_IsVisible(void* playerObj, void* exc);
+        int32_t hook_GetKillCount(void* playerObj, void* exc);
+        int32_t hook_GetDeathCount(void* playerObj, void* exc);
+        uint8_t hook_GetFootballGameTeamID(void* playerObj, void* exc);
+        void hook_StartDashSpeedLerp(void* playerObj, bool startLerp, void* exc);
+        float hook_GetCurrentDashSpeed(void* playerObj, void* exc);
+        float hook_GetExtraSpeed(void* playerObj, void* exc);
+        void hook_StartFiring(void* playerObj, void* weaponObj, void* exc);
+        void hook_StopFire(void* playerObj, void* weaponObj, void* exc);
     }
 
 } // namespace GhostSystems

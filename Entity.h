@@ -34,7 +34,18 @@ namespace GhostSystems {
         int teamId = 0;
         float distanceToLocal = 0.0f;
         Alignment alignment = Alignment::ENEMY;
-        void* obj = nullptr; // Ponteiro Il2Cpp do jogador
+        void* obj = nullptr;
+        
+        // Extended info for new features
+        int kills = 0;
+        int deaths = 0;
+        bool isVisible = true;
+        bool isInVehicle = false;
+        int weaponType = 0;
+        int weaponSubType = 0;
+        std::string weaponName;
+        float currentDashSpeed = 0.0f;
+        bool hasDashActive = false;
         
         bool isAlive() const { return health > 0.0f; }
         float getHealthPercentage() const { return (health / maxHealth) * 100.0f; }
@@ -48,6 +59,58 @@ namespace GhostSystems {
         Vector3 localPlayerPos;
         int localPlayerTeamId;
         void* localPlayerObj = nullptr;
+
+        void updateEntityVisibility(void* obj, bool isVisible) {
+            std::lock_guard<std::mutex> lock(mtx);
+            for (auto& entity : entities) {
+                if (entity.obj == obj) {
+                    entity.isVisible = isVisible;
+                    break;
+                }
+            }
+        }
+
+        void updateEntityKills(void* obj, int kills) {
+            std::lock_guard<std::mutex> lock(mtx);
+            for (auto& entity : entities) {
+                if (entity.obj == obj) {
+                    entity.kills = kills;
+                    break;
+                }
+            }
+        }
+
+        void updateEntityDeaths(void* obj, int deaths) {
+            std::lock_guard<std::mutex> lock(mtx);
+            for (auto& entity : entities) {
+                if (entity.obj == obj) {
+                    entity.deaths = deaths;
+                    break;
+                }
+            }
+        }
+
+        void updateEntityTeamId(void* obj, int teamId) {
+            std::lock_guard<std::mutex> lock(mtx);
+            for (auto& entity : entities) {
+                if (entity.obj == obj) {
+                    entity.teamId = teamId;
+                    break;
+                }
+            }
+        }
+
+        void updateEntityWeapon(void* obj, int weaponType, int weaponSubType, const std::string& weaponName) {
+            std::lock_guard<std::mutex> lock(mtx);
+            for (auto& entity : entities) {
+                if (entity.obj == obj) {
+                    entity.weaponType = weaponType;
+                    entity.weaponSubType = weaponSubType;
+                    entity.weaponName = weaponName;
+                    break;
+                }
+            }
+        }
     };
 
 }

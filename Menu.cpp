@@ -29,6 +29,25 @@ namespace GhostSystems {
     void* Menu::hookedIsFiringMethod = nullptr;
     void* Menu::hookedGetFireDirectionMethod = nullptr;
     void* Menu::hookedStartFiringMethod = nullptr;
+    void* Menu::hookedSetIsLagMethod = nullptr;
+    void* Menu::hookedSetIsPauseAnimMethod = nullptr;
+    void* Menu::hookedGetWeaponOnHandMethod = nullptr;
+    void* Menu::hookedGetWeaponTypeMethod = nullptr;
+    void* Menu::hookedGetWeaponSubTypeMethod = nullptr;
+    void* Menu::hookedGetHeadTFMethod = nullptr;
+    void* Menu::hookedGetHipTFMethod = nullptr;
+    void* Menu::hookedGetLeftAnkleTFMethod = nullptr;
+    void* Menu::hookedGetRightAnkleTFMethod = nullptr;
+    void* Menu::hookedGetLeftToeTFMethod = nullptr;
+    void* Menu::hookedGetRightToeTFMethod = nullptr;
+    void* Menu::hookedIsVisibleMethod = nullptr;
+    void* Menu::hookedGetKillCountMethod = nullptr;
+    void* Menu::hookedGetDeathCountMethod = nullptr;
+    void* Menu::hookedGetFootballGameTeamIDMethod = nullptr;
+    void* Menu::hookedStartDashSpeedLerpMethod = nullptr;
+    void* Menu::hookedGetCurrentDashSpeedMethod = nullptr;
+    void* Menu::hookedGetExtraSpeedMethod = nullptr;
+    void* Menu::hookedStopFireMethod = nullptr;
     bool Menu::isFiringHookActive = false;
     bool Menu::pendingSilentAim = false;
     Menu* Menu::menuInstance = nullptr;
@@ -246,9 +265,6 @@ namespace GhostSystems {
                     ImGui::Checkbox(OBFUSCATE("Ativar ESP"), &espEnabled);
                     if (espEnabled) {
                         ImGui::Checkbox(OBFUSCATE("ESP Box"), &espBox);
-                        if (espBox) {
-                            // Removido opcao de outline
-                        }
                         ImGui::Checkbox(OBFUSCATE("ESP Vida (Health)"), &espHealth);
                         ImGui::Checkbox(OBFUSCATE("ESP Nome"), &espName);
                         ImGui::Checkbox(OBFUSCATE("ESP Distancia"), &espDistance);
@@ -260,6 +276,15 @@ namespace GhostSystems {
                         ImGui::Text("%s", OBFUSCATE("Filtro de Distancia ESP"));
                         ImGui::PopStyleColor();
                         ImGui::SliderFloat(OBFUSCATE("Maxima"), &espMaxDistance, 10.0f, 100.0f, OBFUSCATE("%.0f m"));
+                        ImGui::Separator();
+                        ImGui::Text(OBFUSCATE("=== ESP Enhancements (Debug) ==="));
+                        ImGui::Checkbox(OBFUSCATE("Mostrar Kills"), &espShowKills);
+                        ImGui::Checkbox(OBFUSCATE("Mostrar Mortes"), &espShowDeaths);
+                        ImGui::Checkbox(OBFUSCATE("Mostrar Arma"), &espShowWeapon);
+                        ImGui::Checkbox(OBFUSCATE("Mostrar Team ID"), &espShowTeamId);
+                        ImGui::Checkbox(OBFUSCATE("Mostrar Bones"), &espShowBones);
+                        ImGui::Checkbox(OBFUSCATE("Mostrar Veiculo"), &espShowVehicle);
+                        ImGui::Checkbox(OBFUSCATE("Mostrar Badge Bot"), &espShowBotBadge);
                     }
                     ImGui::EndTabItem();
                 }
@@ -342,6 +367,72 @@ namespace GhostSystems {
                         ImGui::PopStyleColor();
                         ImGui::SliderFloat(OBFUSCATE("Unidades do Pulo (Altura)"), &infJumpStep, 0.1f, 10.0f, OBFUSCATE("%.1f m"));
                     }
+                    ImGui::EndTabItem();
+                }
+
+                if (ImGui::BeginTabItem(OBFUSCATE("##FuncoesAvancadas"))) {
+                    ImGui::PushStyleColor(ImGuiCol_Header, ImVec4(0.2f, 0.6f, 1.0f, 1.0f));
+                    ImGui::TextColored(ImVec4(0.3f, 0.8f, 1.0f, 1.0f), "%s", OBFUSCATE("=== FUNCOES AVANCADAS (DEBUG) ==="));
+                    ImGui::PopStyleColor();
+                    ImGui::Separator();
+
+                    if (ImGui::CollapsingHeader(OBFUSCATE("##FakeLag"))) {
+                        ImGui::Checkbox(OBFUSCATE("Ativar Fake Lag"), &fakeLagEnabled);
+                        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.7f, 0.7f, 0.7f, 1.0f));
+                        ImGui::Text("%s", OBFUSCATE("Simula perda de pacotes ou atraso na comunicacao."));
+                        ImGui::PopStyleColor();
+                        ImGui::SliderInt(OBFUSCATE("Intensidade (packets/s)"), &fakeLagIntensity, 10, 100, OBFUSCATE("%d%%"));
+                        ImGui::SliderInt(OBFUSCATE("Duracao (ms)"), &fakeLagDurationMs, 50, 1000, OBFUSCATE("%d ms"));
+                        ImGui::SliderInt(OBFUSCATE("Packet Loss"), &fakeLagPacketLoss, 0, 95, OBFUSCATE("%d%%"));
+                        ImGui::Separator();
+                    }
+
+                    if (ImGui::CollapsingHeader(OBFUSCATE("##WeaponMonitor"))) {
+                        ImGui::Checkbox(OBFUSCATE("Monitor de Armas"), &weaponMonitorEnabled);
+                        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.7f, 0.7f, 0.7f, 1.0f));
+                        ImGui::Text("%s", OBFUSCATE("Exibe a arma equipada de cada jogador."));
+                        ImGui::PopStyleColor();
+                        ImGui::Separator();
+                    }
+
+                    if (ImGui::CollapsingHeader(OBFUSCATE("##AnimationFreeze"))) {
+                        ImGui::Checkbox(OBFUSCATE("Congelar Animacoes"), &animationFreezeEnabled);
+                        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.7f, 0.7f, 0.7f, 1.0f));
+                        ImGui::Text("%s", OBFUSCATE("Congela animacoes em frames especificos."));
+                        ImGui::PopStyleColor();
+                        if (animationFreezeEnabled) {
+                            ImGui::Checkbox(OBFUSCATE("Animacao Congelada"), &animationFrozen);
+                            ImGui::SliderInt(OBFUSCATE("Frame"), &frozenFrame, 0, 100);
+                        }
+                        ImGui::Separator();
+                    }
+
+                    if (ImGui::CollapsingHeader(OBFUSCATE("##FallSpeed"))) {
+                        ImGui::Checkbox(OBFUSCATE("Velocidade de Queda Aumentada"), &fallSpeedEnabled);
+                        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.7f, 0.7f, 0.7f, 1.0f));
+                        ImGui::Text("%s", OBFUSCATE("Aumenta a velocidade de queda dos jogadores."));
+                        ImGui::PopStyleColor();
+                        ImGui::SliderFloat(OBFUSCATE("Multiplicador de Queda"), &fallSpeedMultiplier, 1.0f, 10.0f, OBFUSCATE("%.1fx"));
+                        ImGui::SliderFloat(OBFUSCATE("Multiplicador de Gravidade"), &gravityMultiplier, 1.0f, 5.0f, OBFUSCATE("%.1fx"));
+                        ImGui::Separator();
+                    }
+
+                    if (ImGui::CollapsingHeader(OBFUSCATE("##DashSystem"))) {
+                        ImGui::Checkbox(OBFUSCATE("Dash Rapido"), &dashEnabled);
+                        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.7f, 0.7f, 0.7f, 1.0f));
+                        ImGui::Text("%s", OBFUSCATE("Aumenta a velocidade de movimento/dash."));
+                        ImGui::PopStyleColor();
+                        ImGui::SliderFloat(OBFUSCATE("Multiplicador de Velocidade"), &dashSpeedMultiplier, 1.0f, 5.0f, OBFUSCATE("%.1fx"));
+                        ImGui::Separator();
+                    }
+
+                    if (ImGui::CollapsingHeader(OBFUSCATE("##TeamDifferentiation"))) {
+                        ImGui::Text("%s", OBFUSCATE("Cores por Time:"));
+                        ImGui::ColorEdit3(OBFUSCATE("Cor Time (Aliado)"), &teamColorR, ImGuiColorEditFlags_NoInputs);
+                        ImGui::ColorEdit3(OBFUSCATE("Cor Inimigo"), &enemyColorR, ImGuiColorEditFlags_NoInputs);
+                        ImGui::Separator();
+                    }
+
                     ImGui::EndTabItem();
                 }
 
@@ -1253,16 +1344,57 @@ namespace GhostSystems {
                     }
 
                     ImFont* font = ImGui::GetFont();
-                    float fontSize = ImGui::GetFontSize() * 1.3f; // Aumenta o tamanho do texto em 30%
+                    float fontSize = ImGui::GetFontSize() * 1.3f;
                     
-                    // Calcula o tamanho real do texto com o novo tamanho de fonte
                     ImVec2 textSize = font->CalcTextSizeA(fontSize, FLT_MAX, 0.0f, textBuffer);
                     
-                    // Ajusta a posicao do nome para ficar mais acima do esp box
                     float espacoExtraAcima = boxHeight * 0.15f; 
                     ImVec2 textPos(xHead - textSize.x / 2.0f, topLeft.y - textSize.y - espacoExtraAcima);
 
                     drawList->AddText(font, fontSize, textPos, IM_COL32(255, 255, 255, 255), textBuffer);
+                }
+
+                if (espShowKills || espShowDeaths || espShowWeapon || espShowTeamId) {
+                    char infoBuffer[256] = {0};
+                    int offset = 0;
+                    
+                    if (espShowTeamId) {
+                        offset += snprintf(infoBuffer + offset, sizeof(infoBuffer) - offset, "T:%d ", entity.teamId);
+                    }
+                    if (espShowKills) {
+                        offset += snprintf(infoBuffer + offset, sizeof(infoBuffer) - offset, "K:%d ", entity.kills);
+                    }
+                    if (espShowDeaths) {
+                        offset += snprintf(infoBuffer + offset, sizeof(infoBuffer) - offset, "D:%d ", entity.deaths);
+                    }
+                    if (espShowWeapon && !entity.weaponName.empty()) {
+                        offset += snprintf(infoBuffer + offset, sizeof(infoBuffer) - offset, "%s", entity.weaponName.c_str());
+                    } else if (espShowWeapon && entity.weaponType > 0) {
+                        offset += snprintf(infoBuffer + offset, sizeof(infoBuffer) - offset, "W:%d", entity.weaponType);
+                    }
+                    
+                    if (offset > 0) {
+                        ImFont* font = ImGui::GetFont();
+                        float fontSize = ImGui::GetFontSize() * 0.9f;
+                        ImVec2 infoSize = font->CalcTextSizeA(fontSize, FLT_MAX, 0.0f, infoBuffer);
+                        ImVec2 infoPos(topLeft.x, bottomRight.y + 2.0f);
+                        
+                        ImU32 infoColor = IM_COL32(200, 200, 200, 255);
+                        if (!entity.isVisible) {
+                            infoColor = IM_COL32(150, 150, 150, 180);
+                        }
+                        
+                        drawList->AddText(font, fontSize, infoPos, infoColor, infoBuffer);
+                    }
+                }
+
+                if (espShowBotBadge && entity.isBot) {
+                    ImFont* font = ImGui::GetFont();
+                    float fontSize = ImGui::GetFontSize() * 0.8f;
+                    const char* botText = "[BOT]";
+                    ImVec2 botSize = font->CalcTextSizeA(fontSize, FLT_MAX, 0.0f, botText);
+                    ImVec2 botPos(bottomRight.x - botSize.x - 2.0f, topLeft.y);
+                    drawList->AddText(font, fontSize, botPos, IM_COL32(255, 100, 100, 255), botText);
                 }
             }
         }
@@ -2025,12 +2157,11 @@ namespace GhostSystems {
             return original_dir;
         }
 
-        void hook_StartFiring(void* playerObj, void* weaponObj) {
+        void hook_StartFiring(void* playerObj, void* weaponObj, void* exc) {
             if (!playerObj || !weaponObj) {
                 typedef void (*origFunc_t)(void*, void*, void*);
                 static origFunc_t origFunc = (origFunc_t)GhostSystems::Menu::hookedStartFiringMethod;
-                void* exc = nullptr;
-                origFunc(playerObj, weaponObj, &exc);
+                origFunc(playerObj, weaponObj, exc);
                 return;
             }
 
@@ -2038,8 +2169,7 @@ namespace GhostSystems {
             if (!menu) {
                 typedef void (*origFunc_t)(void*, void*, void*);
                 static origFunc_t origFunc = (origFunc_t)GhostSystems::Menu::hookedStartFiringMethod;
-                void* exc = nullptr;
-                origFunc(playerObj, weaponObj, &exc);
+                origFunc(playerObj, weaponObj, exc);
                 return;
             }
 
@@ -2133,9 +2263,213 @@ namespace GhostSystems {
 
             typedef void (*origFunc_t)(void*, void*, void*);
             static origFunc_t origFunc = (origFunc_t)GhostSystems::Menu::hookedStartFiringMethod;
-            void* exc = nullptr;
-            origFunc(playerObj, weaponObj, &exc);
+            origFunc(playerObj, weaponObj, exc);
             return;
+        }
+
+        void hook_SetIsLag(void* playerObj, bool isLag, void* exc) {
+            GhostSystems::Menu* menu = GhostSystems::Menu::menuInstance;
+            if (!menu || !menu->fakeLagEnabled) {
+                typedef void (*origFunc_t)(void*, bool, void*);
+                static origFunc_t origFunc = (origFunc_t)GhostSystems::Menu::hookedSetIsLagMethod;
+                origFunc(playerObj, isLag, exc);
+                return;
+            }
+
+            menu->fakeLagActive = true;
+            menu->fakeLagTimer = 0.0f;
+
+            bool simulatedLag = true;
+            int packetLoss = menu->fakeLagPacketLoss;
+            if (packetLoss > 0 && (rand() % 100) < packetLoss) {
+                simulatedLag = false;
+            }
+
+            typedef void (*origFunc_t)(void*, bool, void*);
+            static origFunc_t origFunc = (origFunc_t)GhostSystems::Menu::hookedSetIsLagMethod;
+            origFunc(playerObj, simulatedLag, exc);
+        }
+
+        void hook_SetIsPauseAnim(void* playerObj, bool isPause, void* exc) {
+            GhostSystems::Menu* menu = GhostSystems::Menu::menuInstance;
+            if (!menu || !menu->animationFreezeEnabled) {
+                typedef void (*origFunc_t)(void*, bool, void*);
+                static origFunc_t origFunc = (origFunc_t)GhostSystems::Menu::hookedSetIsPauseAnimMethod;
+                origFunc(playerObj, isPause, exc);
+                return;
+            }
+
+            if (menu->animationFrozen) {
+                isPause = true;
+            }
+
+            typedef void (*origFunc_t)(void*, bool, void*);
+            static origFunc_t origFunc = (origFunc_t)GhostSystems::Menu::hookedSetIsPauseAnimMethod;
+            origFunc(playerObj, isPause, exc);
+        }
+
+        void* hook_GetWeaponOnHand(void* playerObj, void* exc) {
+            typedef void* (*origFunc_t)(void*, void*);
+            static origFunc_t origFunc = (origFunc_t)GhostSystems::Menu::hookedGetWeaponOnHandMethod;
+            void* weaponObj = origFunc(playerObj, exc);
+
+            GhostSystems::Menu* menu = GhostSystems::Menu::menuInstance;
+            if (menu && menu->weaponMonitorEnabled && weaponObj && !exc) {
+                if (menu->hookedGetWeaponTypeMethod) {
+                    typedef int (*typeFunc_t)(void*, void*);
+                    typeFunc_t typeFunc = (typeFunc_t)menu->hookedGetWeaponTypeMethod;
+                    int weaponType = typeFunc(weaponObj, exc);
+                    menu->playerWeapons[playerObj].weaponType = weaponType;
+                    menu->playerWeapons[playerObj].isEquipped = true;
+                }
+                if (menu->hookedGetWeaponSubTypeMethod) {
+                    typedef int (*subtypeFunc_t)(void*, void*);
+                    subtypeFunc_t subtypeFunc = (subtypeFunc_t)menu->hookedGetWeaponSubTypeMethod;
+                    int weaponSubType = subtypeFunc(weaponObj, exc);
+                    menu->playerWeapons[playerObj].weaponSubType = weaponSubType;
+                }
+            }
+
+            return weaponObj;
+        }
+
+        void* hook_GetWeaponType(void* playerObj, void* exc) {
+            typedef void* (*origFunc_t)(void*, void*);
+            static origFunc_t origFunc = (origFunc_t)GhostSystems::Menu::hookedGetWeaponTypeMethod;
+            void* result = origFunc(playerObj, exc);
+
+            GhostSystems::Menu* menu = GhostSystems::Menu::menuInstance;
+            if (menu && menu->weaponMonitorEnabled && !exc) {
+                menu->playerWeapons[playerObj].weaponType = (int)(uintptr_t)result;
+            }
+
+            return result;
+        }
+
+        int32_t hook_GetWeaponSubType(void* playerObj, void* exc) {
+            typedef int32_t (*origFunc_t)(void*, void*);
+            static origFunc_t origFunc = (origFunc_t)GhostSystems::Menu::hookedGetWeaponSubTypeMethod;
+            int32_t result = origFunc(playerObj, exc);
+
+            GhostSystems::Menu* menu = GhostSystems::Menu::menuInstance;
+            if (menu && menu->weaponMonitorEnabled && !exc) {
+                menu->playerWeapons[playerObj].weaponSubType = (int)result;
+            }
+
+            return result;
+        }
+
+        void* hook_GetHeadTransform(void* playerObj, void* exc) {
+            typedef void* (*origFunc_t)(void*, void*);
+            static origFunc_t origFunc = (origFunc_t)GhostSystems::Menu::hookedGetHeadTFMethod;
+            void* result = origFunc(playerObj, exc);
+            return result;
+        }
+
+        void* hook_GetHipTransform(void* playerObj, void* exc) {
+            typedef void* (*origFunc_t)(void*, void*);
+            static origFunc_t origFunc = (origFunc_t)GhostSystems::Menu::hookedGetHipTFMethod;
+            return origFunc(playerObj, exc);
+        }
+
+        bool hook_IsVisible(void* playerObj, void* exc) {
+            typedef bool (*origFunc_t)(void*, void*);
+            static origFunc_t origFunc = (origFunc_t)GhostSystems::Menu::hookedIsVisibleMethod;
+            bool result = origFunc(playerObj, exc);
+
+            GhostSystems::Menu* menu = GhostSystems::Menu::menuInstance;
+            if (menu && !exc) {
+                menu->sharedState.updateEntityVisibility(playerObj, result);
+            }
+
+            return result;
+        }
+
+        int32_t hook_GetKillCount(void* playerObj, void* exc) {
+            typedef int32_t (*origFunc_t)(void*, void*);
+            static origFunc_t origFunc = (origFunc_t)GhostSystems::Menu::hookedGetKillCountMethod;
+            int32_t result = origFunc(playerObj, exc);
+
+            GhostSystems::Menu* menu = GhostSystems::Menu::menuInstance;
+            if (menu && menu->espShowKills && !exc) {
+                menu->sharedState.updateEntityKills(playerObj, (int)result);
+            }
+
+            return result;
+        }
+
+        int32_t hook_GetDeathCount(void* playerObj, void* exc) {
+            typedef int32_t (*origFunc_t)(void*, void*);
+            static origFunc_t origFunc = (origFunc_t)GhostSystems::Menu::hookedGetDeathCountMethod;
+            int32_t result = origFunc(playerObj, exc);
+
+            GhostSystems::Menu* menu = GhostSystems::Menu::menuInstance;
+            if (menu && menu->espShowDeaths && !exc) {
+                menu->sharedState.updateEntityDeaths(playerObj, (int)result);
+            }
+
+            return result;
+        }
+
+        uint8_t hook_GetFootballGameTeamID(void* playerObj, void* exc) {
+            typedef uint8_t (*origFunc_t)(void*, void*);
+            static origFunc_t origFunc = (origFunc_t)GhostSystems::Menu::hookedGetFootballGameTeamIDMethod;
+            uint8_t result = origFunc(playerObj, exc);
+
+            GhostSystems::Menu* menu = GhostSystems::Menu::menuInstance;
+            if (menu && menu->espShowTeamId && !exc) {
+                menu->sharedState.updateEntityTeamId(playerObj, (int)result);
+            }
+
+            return result;
+        }
+
+        void hook_StartDashSpeedLerp(void* playerObj, bool startLerp, void* exc) {
+            GhostSystems::Menu* menu = GhostSystems::Menu::menuInstance;
+            if (menu && menu->dashEnabled && startLerp) {
+                menu->dashActiveTime = 1.0f;
+            }
+
+            typedef void (*origFunc_t)(void*, bool, void*);
+            static origFunc_t origFunc = (origFunc_t)GhostSystems::Menu::hookedStartDashSpeedLerpMethod;
+            origFunc(playerObj, startLerp, exc);
+        }
+
+        float hook_GetCurrentDashSpeed(void* playerObj, void* exc) {
+            typedef float (*origFunc_t)(void*, void*);
+            static origFunc_t origFunc = (origFunc_t)GhostSystems::Menu::hookedGetCurrentDashSpeedMethod;
+            float result = origFunc(playerObj, exc);
+
+            GhostSystems::Menu* menu = GhostSystems::Menu::menuInstance;
+            if (menu && menu->dashEnabled && !exc) {
+                result *= menu->dashSpeedMultiplier;
+            }
+
+            return result;
+        }
+
+        float hook_GetExtraSpeed(void* playerObj, void* exc) {
+            typedef float (*origFunc_t)(void*, void*);
+            static origFunc_t origFunc = (origFunc_t)GhostSystems::Menu::hookedGetExtraSpeedMethod;
+            float result = origFunc(playerObj, exc);
+
+            GhostSystems::Menu* menu = GhostSystems::Menu::menuInstance;
+            if (menu && menu->dashEnabled && !exc) {
+                result *= menu->dashSpeedMultiplier;
+            }
+
+            return result;
+        }
+
+        void hook_StopFire(void* playerObj, void* weaponObj, void* exc) {
+            typedef void (*origFunc_t)(void*, void*, void*);
+            static origFunc_t origFunc = (origFunc_t)GhostSystems::Menu::hookedStopFireMethod;
+            origFunc(playerObj, weaponObj, exc);
+
+            GhostSystems::Menu* menu = GhostSystems::Menu::menuInstance;
+            if (menu && menu->fakeLagEnabled && menu->fakeLagActive) {
+                menu->fakeLagActive = false;
+            }
         }
     }
 
