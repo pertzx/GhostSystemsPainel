@@ -160,13 +160,23 @@ namespace Il2Cpp {
         if (!dictObj || !object_get_class) return false;
         void* klass = object_get_class(dictObj);
         
+        const char* klassName = class_get_name ? class_get_name(klass) : "unknown";
+        
         void* entriesField = class_get_field_from_name(klass, "_entries");
         if (!entriesField) entriesField = class_get_field_from_name(klass, "entries");
+        if (!entriesField) entriesField = class_get_field_from_name(klass, "_entry");
+        if (!entriesField) entriesField = class_get_field_from_name(klass, "m_Entries");
+        if (!entriesField) entriesField = class_get_field_from_name(klass, "_buckets");
         
         void* countField = class_get_field_from_name(klass, "_count");
         if (!countField) countField = class_get_field_from_name(klass, "count");
+        if (!countField) countField = class_get_field_from_name(klass, "Count");
+        if (!countField) countField = class_get_field_from_name(klass, "_size");
+        if (!countField) countField = class_get_field_from_name(klass, "m_Count");
 
-        if (!entriesField || !countField) return false;
+        if (!entriesField || !countField) {
+            return false;
+        }
 
         int count = 0;
         field_get_value(dictObj, countField, &count);
@@ -176,7 +186,7 @@ namespace Il2Cpp {
         field_get_value(dictObj, entriesField, &entriesArray);
         if (!entriesArray) return false;
 
-        *outValues = entriesArray; // This is an Il2CppArray*
+        *outValues = entriesArray;
         return true;
     }
 }

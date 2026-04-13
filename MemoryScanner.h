@@ -144,12 +144,20 @@ namespace GhostSystems {
                                     
                                     const char* className = Il2Cpp::class_get_name(entityKlass);
                                     
+                                    bool isPlayerClass = false;
+                                    if (className && (strcmp(className, "Player") == 0 || strcmp(className, "COW.Player") == 0)) {
+                                        isPlayerClass = true;
+                                    }
+                                    if (!isPlayerClass) {
+                                        isPlayerClass = Il2Cpp::IsSubclassOf(entityKlass, "Player");
+                                    }
+                                    
                                     // Log para debug
                                     if (logger.is_open()) {
-                                        logger << "[DEBUG] Found Entity class: " << (className ? className : "null") << std::endl;
+                                        logger << "[DEBUG] Found Entity class: " << (className ? className : "null") << " isPlayer: " << (isPlayerClass ? "YES" : "NO") << std::endl;
                                     }
 
-                                    if (Il2Cpp::IsSubclassOf(entityKlass, "Player")) {
+                                    if (isPlayerClass) {
                                         PlayerEntity p;
                                         p.baseAddress = (uintptr_t)entityObj;
                                         

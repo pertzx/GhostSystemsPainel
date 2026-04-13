@@ -269,7 +269,7 @@ namespace GhostSystems {
                         ImGui::Checkbox(OBFUSCATE("ESP Nome"), &espName);
                         ImGui::Checkbox(OBFUSCATE("ESP Distancia"), &espDistance);
                         ImGui::Checkbox(OBFUSCATE("ESP Linha"), &espLine);
-                        // ImGui::Checkbox("Esqueleto (Bones)", &espSkeleton); // DESATIVADO - POSSIVEL CAUSA DE BAN
+                        ImGui::Checkbox(OBFUSCATE("Esqueleto (Bones)"), &espSkeleton);
 
                         ImGui::Separator();
                         ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 1.0f, 0.0f, 1.0f));
@@ -925,20 +925,31 @@ namespace GhostSystems {
             }
 
 
-            // DESATIVADO - Skeleton/Bone causa ban (nao reativar)
-            getHipTFMethod = nullptr;
-            getLeftAnkleTFMethod = nullptr;
-            getRightAnkleTFMethod = nullptr;
-            getLeftToeTFMethod = nullptr;
-            getRightToeTFMethod = nullptr;
-            getBoneTransformMethod = nullptr;
-            getAnimatorMethod = nullptr;
-            getAvatarMethod = nullptr;
-            getComponentMethod = nullptr;
-            getGoComponentMethod = nullptr;
-            getComponentNormalMethod = nullptr;
-            isVisibleMethod = nullptr;
-            getNewAnimComponentMethod = nullptr;
+            // ATIVADO - Bones usando GetXXXTF (mesmo método do GetHeadTF que já funciona)
+            if ((!getHipTFMethod) && sharedState.localPlayerObj) {
+                void* playerKlass = Il2Cpp::object_get_class(sharedState.localPlayerObj);
+                if (playerKlass) {
+                    getHipTFMethod = Il2Cpp::GetMethodRecursively(playerKlass, "GetHipTF", 0);
+                    getLeftAnkleTFMethod = Il2Cpp::GetMethodRecursively(playerKlass, "GetLeftAnkleTF", 0);
+                    getRightAnkleTFMethod = Il2Cpp::GetMethodRecursively(playerKlass, "GetRightAnkleTF", 0);
+                    getLeftToeTFMethod = Il2Cpp::GetMethodRecursively(playerKlass, "GetLeftToeTF", 0);
+                    getRightToeTFMethod = Il2Cpp::GetMethodRecursively(playerKlass, "GetRightToeTF", 0);
+                    
+                    // ATIVADO - GetBoneTransform para braços (busca direta na classe Animator)
+                    getAnimatorMethod = Il2Cpp::GetMethodRecursively(playerKlass, "GetAnimator", 0);
+                    if (!getAnimatorMethod) getAnimatorMethod = Il2Cpp::GetMethodRecursively(playerKlass, "get_animator", 0);
+                    
+                    // Busca classe Animator via il2cpp
+                    void* animatorKlass = nullptr;
+                    if (getAnimatorMethod && Il2Cpp::class_from_name) {
+                        animatorKlass = Il2Cpp::class_from_name(nullptr, "UnityEngine", "Animator");
+                    }
+                    if (animatorKlass) {
+                        getBoneTransformMethod = Il2Cpp::GetMethodRecursively(animatorKlass, "GetBoneTransform", 1);
+                    }
+                }
+            }
+            // FIM ATIVADO
 
             methodsSearched = true;
         }
@@ -964,12 +975,13 @@ namespace GhostSystems {
             silentAimStatus = OBFUSCATE("Hook GetFireDirection Ativo");
         }
 
-        // Aplica hook no StartFiring se silentAimApproach == 1
-        if (startFiringMethod && !GhostSystems::Menu::hookedStartFiringMethod && silentAimEnabled && silentAimApproach == 1) {
-            void* targetMethod = startFiringMethod;
-            A64HookFunction(targetMethod, (void*)GhostSystems::Hooks::hook_StartFiring, (void**)&GhostSystems::Menu::hookedStartFiringMethod);
-            silentAimStatus = OBFUSCATE("Hook StartFiring Ativo");
-        }
+        // DESATIVADO - hook StartFiring interfere na comunicação e causa ban
+        // // Aplica hook no StartFiring se silentAimApproach == 1
+        // if (startFiringMethod && !GhostSystems::Menu::hookedStartFiringMethod && silentAimEnabled && silentAimApproach == 1) {
+        //     void* targetMethod = startFiringMethod;
+        //     A64HookFunction(targetMethod, (void*)GhostSystems::Hooks::hook_StartFiring, (void**)&GhostSystems::Menu::hookedStartFiringMethod);
+        //     silentAimStatus = OBFUSCATE("Hook StartFiring Ativo");
+        // }
 
         if (!get_mainMethod || !worldToScreenMethod) return;
 
@@ -1327,6 +1339,160 @@ namespace GhostSystems {
                 //         }
                 //     }
                 // }
+
+                // NOVO ESP SKELETON - Usando GetXXXTF (mesmo método do GetHeadTF que já funciona)
+                if (espSkeleton && entity.obj) {
+                    ImVec2 boneScreenHead = ImVec2(xHead, yHead);
+                    ImVec2 boneScreenHip = ImVec2(0, 0);
+                    ImVec2 boneScreenLAnkle = ImVec2(0, 0);
+                    ImVec2 boneScreenRAnkle = ImVec2(0, 0);
+                    ImVec2 boneScreenLToe = ImVec2(0, 0);
+                    ImVec2 boneScreenRToe = ImVec2(0, 0);
+                    ImVec2 boneScreenNeck = ImVec2(0, 0);
+                    ImVec2 boneScreenLShoulder = ImVec2(0, 0);
+                    ImVec2 boneScreenRShoulder = ImVec2(0, 0);
+                    ImVec2 boneScreenLUpperArm = ImVec2(0, 0);
+                    ImVec2 boneScreenRUpperArm = ImVec2(0, 0);
+                    ImVec2 boneScreenLLowerArm = ImVec2(0, 0);
+                    ImVec2 boneScreenRLowerArm = ImVec2(0, 0);
+                    ImVec2 boneScreenLHand = ImVec2(0, 0);
+                    ImVec2 boneScreenRHand = ImVec2(0, 0);
+                    
+                    bool hasHip = false, hasLAnkle = false, hasRAnkle = false, hasLToe = false, hasRToe = false;
+                    bool hasNeck = false, hasLShoulder = false, hasRShoulder = false;
+                    bool hasLUpperArm = false, hasRUpperArm = false;
+                    bool hasLLowerArm = false, hasRLowerArm = false;
+                    bool hasLHand = false, hasRHand = false;
+                    
+                    auto getTFPosScreen = [&](void* method, bool& success) -> ImVec2 {
+                        success = false;
+                        ImVec2 result = ImVec2(0, 0);
+                        if (!method || !entity.obj) return result;
+                        
+                        void* exc = nullptr;
+                        void* tf = Il2Cpp::runtime_invoke(method, entity.obj, nullptr, &exc);
+                        if (tf && !exc) {
+                            void* posObj = Il2Cpp::runtime_invoke(getPosMethod, tf, nullptr, &exc);
+                            if (posObj && !exc) {
+                                Vector3Args wPos = *(Vector3Args*)((uintptr_t)posObj + 0x10);
+                                void* args[1] = { &wPos };
+                                void* exc2 = nullptr;
+                                void* w2sObj = Il2Cpp::runtime_invoke(worldToScreenMethod, mainCamera, args, &exc2);
+                                if (w2sObj && !exc2) {
+                                    Vector3Args sPos = *(Vector3Args*)((uintptr_t)w2sObj + 0x10);
+                                    if (sPos.z > 0) {
+                                        success = true;
+                                        result = ImVec2(sPos.x, screenSize.y - sPos.y);
+                                    }
+                                }
+                            }
+                        }
+                        return result;
+                    };
+                    
+                    // GetBoneTransform do Animator para braços
+                    auto getBoneTransformScreen = [&](int humanBoneId, bool& success) -> ImVec2 {
+                        success = false;
+                        ImVec2 result = ImVec2(0, 0);
+                        if (!getBoneTransformMethod || !entity.obj) return result;
+                        
+                        void* exc = nullptr;
+                        void* animator = Il2Cpp::runtime_invoke(getAnimatorMethod, entity.obj, nullptr, &exc);
+                        if (!animator || exc) return result;
+                        
+                        if (humanBoneId < 0) return result;
+                        
+                        void* args[1] = { &humanBoneId };
+                        void* boneTf = Il2Cpp::runtime_invoke(getBoneTransformMethod, animator, args, &exc);
+                        if (!boneTf || exc) return result;
+                        
+                        void* posObj = Il2Cpp::runtime_invoke(getPosMethod, boneTf, nullptr, &exc);
+                        if (posObj && !exc) {
+                            Vector3Args wPos = *(Vector3Args*)((uintptr_t)posObj + 0x10);
+                            void* w2sArgs[1] = { &wPos };
+                            void* exc2 = nullptr;
+                            void* w2sObj = Il2Cpp::runtime_invoke(worldToScreenMethod, mainCamera, w2sArgs, &exc2);
+                            if (w2sObj && !exc2) {
+                                Vector3Args sPos = *(Vector3Args*)((uintptr_t)w2sObj + 0x10);
+                                if (sPos.z > 0) {
+                                    success = true;
+                                    result = ImVec2(sPos.x, screenSize.y - sPos.y);
+                                }
+                            }
+                        }
+                        return result;
+                    };
+                    
+                    boneScreenHip = getTFPosScreen(getHipTFMethod, hasHip);
+                    boneScreenLAnkle = getTFPosScreen(getLeftAnkleTFMethod, hasLAnkle);
+                    boneScreenRAnkle = getTFPosScreen(getRightAnkleTFMethod, hasRAnkle);
+                    boneScreenLToe = getTFPosScreen(getLeftToeTFMethod, hasLToe);
+                    boneScreenRToe = getTFPosScreen(getRightToeTFMethod, hasRToe);
+                    
+                    // Bones do braço via GetBoneTransform (valores corretos do Unity HumanBodyBones)
+                    boneScreenNeck = getBoneTransformScreen(19, hasNeck);         // Neck
+                    boneScreenLShoulder = getBoneTransformScreen(11, hasLShoulder); // LeftShoulder
+                    boneScreenRShoulder = getBoneTransformScreen(15, hasRShoulder); // RightShoulder
+                    boneScreenLUpperArm = getBoneTransformScreen(12, hasLUpperArm);  // LeftUpperArm
+                    boneScreenRUpperArm = getBoneTransformScreen(16, hasRUpperArm);  // RightUpperArm
+                    boneScreenLLowerArm = getBoneTransformScreen(13, hasLLowerArm);  // LeftLowerArm
+                    boneScreenRLowerArm = getBoneTransformScreen(17, hasRLowerArm);  // RightLowerArm
+                    boneScreenLHand = getBoneTransformScreen(14, hasLHand);         // LeftHand
+                    boneScreenRHand = getBoneTransformScreen(18, hasRHand);         // RightHand
+                    
+                    if (boneScreenHead.y > 0) {
+                        // Pernas (já funcionava)
+                        if (hasHip && boneScreenHip.y > 0) {
+                            drawList->AddLine(boneScreenHead, boneScreenHip, color, 1.5f);
+                        }
+                        if (hasHip && hasLAnkle && boneScreenHip.y > 0 && boneScreenLAnkle.y > 0) {
+                            drawList->AddLine(boneScreenHip, boneScreenLAnkle, color, 1.5f);
+                        }
+                        if (hasHip && hasRAnkle && boneScreenHip.y > 0 && boneScreenRAnkle.y > 0) {
+                            drawList->AddLine(boneScreenHip, boneScreenRAnkle, color, 1.5f);
+                        }
+                        if (hasLAnkle && hasLToe && boneScreenLAnkle.y > 0 && boneScreenLToe.y > 0) {
+                            drawList->AddLine(boneScreenLAnkle, boneScreenLToe, color, 1.5f);
+                        }
+                        if (hasRAnkle && hasRToe && boneScreenRAnkle.y > 0 && boneScreenRToe.y > 0) {
+                            drawList->AddLine(boneScreenRAnkle, boneScreenRToe, color, 1.5f);
+                        }
+                        
+                        // Braços - Neck -> Shoulder -> UpperArm -> LowerArm -> Hand
+                        if (hasNeck && boneScreenNeck.y > 0) {
+                            drawList->AddLine(boneScreenHead, boneScreenNeck, color, 1.5f);
+                            
+                            // Braço esquerdo
+                            if (hasLShoulder && boneScreenLShoulder.y > 0) {
+                                drawList->AddLine(boneScreenNeck, boneScreenLShoulder, color, 1.5f);
+                            }
+                            if (hasLShoulder && hasLUpperArm && boneScreenLShoulder.y > 0 && boneScreenLUpperArm.y > 0) {
+                                drawList->AddLine(boneScreenLShoulder, boneScreenLUpperArm, color, 1.5f);
+                            }
+                            if (hasLUpperArm && hasLLowerArm && boneScreenLUpperArm.y > 0 && boneScreenLLowerArm.y > 0) {
+                                drawList->AddLine(boneScreenLUpperArm, boneScreenLLowerArm, color, 1.5f);
+                            }
+                            if (hasLLowerArm && hasLHand && boneScreenLLowerArm.y > 0 && boneScreenLHand.y > 0) {
+                                drawList->AddLine(boneScreenLLowerArm, boneScreenLHand, color, 1.5f);
+                            }
+                            
+                            // Braço direito
+                            if (hasRShoulder && boneScreenRShoulder.y > 0) {
+                                drawList->AddLine(boneScreenNeck, boneScreenRShoulder, color, 1.5f);
+                            }
+                            if (hasRShoulder && hasRUpperArm && boneScreenRShoulder.y > 0 && boneScreenRUpperArm.y > 0) {
+                                drawList->AddLine(boneScreenRShoulder, boneScreenRUpperArm, color, 1.5f);
+                            }
+                            if (hasRUpperArm && hasRLowerArm && boneScreenRUpperArm.y > 0 && boneScreenRLowerArm.y > 0) {
+                                drawList->AddLine(boneScreenRUpperArm, boneScreenRLowerArm, color, 1.5f);
+                            }
+                            if (hasRLowerArm && hasRHand && boneScreenRLowerArm.y > 0 && boneScreenRHand.y > 0) {
+                                drawList->AddLine(boneScreenRLowerArm, boneScreenRHand, color, 1.5f);
+                            }
+                        }
+                    }
+                }
+                // FIM SKELETON
 
                 if (espLine) {
                     // Linha do topo da tela ate o jogador (DrawLine)
