@@ -32,6 +32,7 @@ typedef void (*il2cpp_thread_detach_t)(void* thread);
 typedef void* (*il2cpp_class_get_type_t)(void* klass);
 typedef void* (*il2cpp_type_get_object_t)(const void* type);
 typedef void* (*il2cpp_string_new_t)(const char* str);
+typedef void (*il2cpp_free_t)(void* ptr);
 
 namespace Il2Cpp {
     inline il2cpp_domain_get_t domain_get = nullptr;
@@ -62,6 +63,7 @@ namespace Il2Cpp {
     inline il2cpp_class_get_type_t class_get_type = nullptr;
     inline il2cpp_type_get_object_t type_get_object = nullptr;
     inline il2cpp_string_new_t string_new = nullptr;
+    inline il2cpp_free_t free_func = nullptr;
 
     inline bool Initialize() {
         void* handle = dlopen("libil2cpp.so", RTLD_LAZY);
@@ -94,6 +96,7 @@ namespace Il2Cpp {
         class_get_type = (il2cpp_class_get_type_t)dlsym(handle, "il2cpp_class_get_type");
         type_get_object = (il2cpp_type_get_object_t)dlsym(handle, "il2cpp_type_get_object");
         string_new = (il2cpp_string_new_t)dlsym(handle, "il2cpp_string_new");
+        free_func = (il2cpp_free_t)dlsym(handle, "il2cpp_free");
 
         return domain_get != nullptr;
     }
@@ -129,17 +132,6 @@ namespace Il2Cpp {
         return nullptr;
     }
 
-    inline void* GetFieldRecursively(void* klass, const char* fieldName) {
-        if (!class_get_parent || !class_get_field_from_name) return nullptr;
-        void* curr = klass;
-        while (curr) {
-            void* field = class_get_field_from_name(curr, fieldName);
-            if (field) return field;
-            curr = class_get_parent(curr);
-        }
-        return nullptr;
-    }
-
     inline bool IsSubclassOf(void* klass, const char* targetClassName) {
         if (!class_get_parent || !class_get_name) return false;
         void* curr = klass;
@@ -160,23 +152,13 @@ namespace Il2Cpp {
         if (!dictObj || !object_get_class) return false;
         void* klass = object_get_class(dictObj);
         
-        const char* klassName = class_get_name ? class_get_name(klass) : "unknown";
-        
         void* entriesField = class_get_field_from_name(klass, "_entries");
         if (!entriesField) entriesField = class_get_field_from_name(klass, "entries");
-        if (!entriesField) entriesField = class_get_field_from_name(klass, "_entry");
-        if (!entriesField) entriesField = class_get_field_from_name(klass, "m_Entries");
-        if (!entriesField) entriesField = class_get_field_from_name(klass, "_buckets");
         
         void* countField = class_get_field_from_name(klass, "_count");
         if (!countField) countField = class_get_field_from_name(klass, "count");
-        if (!countField) countField = class_get_field_from_name(klass, "Count");
-        if (!countField) countField = class_get_field_from_name(klass, "_size");
-        if (!countField) countField = class_get_field_from_name(klass, "m_Count");
 
-        if (!entriesField || !countField) {
-            return false;
-        }
+        if (!entriesField || !countField) return false;
 
         int count = 0;
         field_get_value(dictObj, countField, &count);
@@ -186,7 +168,7 @@ namespace Il2Cpp {
         field_get_value(dictObj, entriesField, &entriesArray);
         if (!entriesArray) return false;
 
-        *outValues = entriesArray;
+        *outValues = entriesArray; // This is an Il2CppArray*
         return true;
     }
 }
