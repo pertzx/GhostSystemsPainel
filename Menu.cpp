@@ -1239,10 +1239,10 @@ extern Menu* g_Menu;
                             }
                             
                             auto drawBoneLine = [&](int b1, int b2) {
-                                if (hasBone[b1] && hasBone[b2]) {
-                                    drawList->AddLine(boneScreen[b1], boneScreen[b2], IM_COL32(255, 255, 255, 255), 1.5f);
-                                }
-                            };
+                                  if (hasBone[b1] && hasBone[b2]) {
+                                      drawList->AddLine(boneScreen[b1], boneScreen[b2], color, 1.5f);
+                                  }
+                              };
                             
                             // Desenha Esqueleto
                             drawBoneLine(10, 9);  // Head -> Neck
