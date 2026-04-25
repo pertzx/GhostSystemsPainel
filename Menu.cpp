@@ -560,12 +560,61 @@ extern Menu* g_Menu;
           std::lock_guard<std::mutex> lock(sharedState.mtx);
 
           struct Vector3Args { float x, y, z; };
-          Vector3Args localPos = { sharedState.localPlayerPos.x, sharedState.localPlayerPos.y, sharedState.localPlayerPos.z };
+            Vector3Args localPos = { sharedState.localPlayerPos.x, sharedState.localPlayerPos.y, sharedState.localPlayerPos.z };
 
-          for (auto& entity : sharedState.entities) {
-              if (!entity.isAlive() || entity.baseAddress == 0 || entity.obj == nullptr) continue;
+            static void* getTransformMethod = nullptr;
+            static void* getPosMethod = nullptr;
+            static bool transformMethodsCached = false;
 
-              if (entity.alignment != Alignment::ENEMY) {
+            if (!transformMethodsCached) {
+                void* componentKlass = Il2Cpp::GetClass("UnityEngine.CoreModule.dll", "UnityEngine", "Component");
+                  if (!componentKlass) {
+                      componentKlass = Il2Cpp::GetClass("UnityEngine.dll", "UnityEngine", "Component");
+                  }
+                  if (componentKlass) {
+                    getTransformMethod = Il2Cpp::GetMethodRecursively(componentKlass, "get_transform", 0);
+                }
+                void* transformKlass = Il2Cpp::GetClass("UnityEngine.CoreModule.dll", "UnityEngine", "Transform");
+                if (transformKlass) {
+                    getPosMethod = Il2Cpp::GetMethodRecursively(transformKlass, "get_position", 0);
+                }
+                transformMethodsCached = true;
+            }
+
+            // Atualiza posicao do jogador local em tempo real
+            if (getTransformMethod && getPosMethod && sharedState.localPlayerObj) {
+                void* excPos = nullptr;
+                void* localTransform = Il2Cpp::runtime_invoke(getTransformMethod, sharedState.localPlayerObj, nullptr, &excPos);
+                if (localTransform && !excPos) {
+                    void* localPosObj = Il2Cpp::runtime_invoke(getPosMethod, localTransform, nullptr, &excPos);
+                    if (localPosObj && !excPos) {
+                        localPos = *(Vector3Args*)((uintptr_t)localPosObj + 0x10);
+                        sharedState.localPlayerPos.x = localPos.x;
+                        sharedState.localPlayerPos.y = localPos.y;
+                        sharedState.localPlayerPos.z = localPos.z;
+                    }
+                }
+            }
+
+            for (auto& entity : sharedState.entities) {
+                if (!entity.isAlive() || entity.baseAddress == 0 || entity.obj == nullptr) continue;
+
+                // Atualiza posicao real do pe do alvo em tempo real
+                if (getTransformMethod && getPosMethod && entity.obj) {
+                    void* excPos = nullptr;
+                    void* entityTransform = Il2Cpp::runtime_invoke(getTransformMethod, entity.obj, nullptr, &excPos);
+                    if (entityTransform && !excPos) {
+                        void* entityPosObj = Il2Cpp::runtime_invoke(getPosMethod, entityTransform, nullptr, &excPos);
+                        if (entityPosObj && !excPos) {
+                            Vector3Args newPos = *(Vector3Args*)((uintptr_t)entityPosObj + 0x10);
+                            entity.position.x = newPos.x;
+                            entity.position.y = newPos.y;
+                            entity.position.z = newPos.z;
+                        }
+                    }
+                }
+
+                if (entity.alignment != Alignment::ENEMY) {
                   entity.isVisible = true; // allies are visible
                   continue;
               }
@@ -659,6 +708,9 @@ extern Menu* g_Menu;
         static void* getTransformMethod = nullptr;
         static void* transformKlass = nullptr;
         static void* getPosMethod = nullptr;
+        static void* getChildCountMethod = nullptr;
+        static void* getChildMethod = nullptr;
+        static void* getNameMethod = nullptr;
         static void* getRotMethod = nullptr;
         static void* setRotMethod = nullptr;
         static void* quatKlass = nullptr;
@@ -669,16 +721,17 @@ extern Menu* g_Menu;
         static void* getComponentMethod = nullptr;
         static void* animatorTypeObject = nullptr;
         static void* getBoneTransformMethod = nullptr;
-        static void* raycastMethod = nullptr;
-        static uint32_t raycastParamCount = 0;
+          static void* raycastMethod = nullptr;
+          static uint32_t raycastParamCount = 0;
 
-        static bool methodsSearched = false;
+          static bool methodsSearched = false;
 
-        struct CachedAnimatorInfo {
+          struct CachedAnimatorInfo {
             void* animatorObj = nullptr;
             bool hasAttempted = false;
             uint32_t lastAttemptMs = 0;
             std::unordered_map<int, void*> boneTransforms;
+            bool genericRigCached = false;
         };
         static std::unordered_map<void*, CachedAnimatorInfo> cachedAnimators;
 
@@ -694,20 +747,118 @@ extern Menu* g_Menu;
 
         struct Vector3Args { float x, y, z; };
 
-        auto getBonePosCached = [](CachedAnimatorInfo* info, int boneId, bool& success) -> Vector3Args {
+        auto mapNameToBoneId = [](const char* originalName) -> int {
+            if (!originalName) return -1;
+            
+            char name[128];
+            strncpy(name, originalName, 127);
+            name[127] = '\0';
+            for(int i = 0; name[i]; i++){
+                name[i] = tolower(name[i]);
+            }
+            
+            if (strstr(name, "head")) return 10;
+            if (strstr(name, "neck")) return 9;
+            
+            if (strstr(name, "spine2") || strstr(name, "spine 2") || strstr(name, "chest")) return 8;
+            if (strstr(name, "spine1") || strstr(name, "spine 1")) return 7;
+            
+            // A ordem importa: primeiro checa pelvis, se nao, checa spine genérico
+            if (strstr(name, "pelvis") || strstr(name, "hips") || strstr(name, "hip")) return 0;
+            if (strstr(name, "spine")) return 7;
+            
+            // Braços Esquerdos
+            if (strstr(name, "l clavicle") || strstr(name, "l_clavicle") || strstr(name, "leftshoulder") || strstr(name, "left shoulder")) return 11;
+            if (strstr(name, "l upperarm") || strstr(name, "l_upperarm") || strstr(name, "leftarm") || strstr(name, "left arm")) return 13;
+            if (strstr(name, "l forearm") || strstr(name, "l_forearm") || strstr(name, "leftforearm") || strstr(name, "left forearm")) return 15;
+            if (strstr(name, "l hand") || strstr(name, "l_hand") || strstr(name, "lefthand") || strstr(name, "left hand")) return 17;
+            
+            // Braços Direitos
+            if (strstr(name, "r clavicle") || strstr(name, "r_clavicle") || strstr(name, "rightshoulder") || strstr(name, "right shoulder")) return 12;
+            if (strstr(name, "r upperarm") || strstr(name, "r_upperarm") || strstr(name, "rightarm") || strstr(name, "right arm")) return 14;
+            if (strstr(name, "r forearm") || strstr(name, "r_forearm") || strstr(name, "rightforearm") || strstr(name, "right forearm")) return 16;
+            if (strstr(name, "r hand") || strstr(name, "r_hand") || strstr(name, "righthand") || strstr(name, "right hand")) return 18;
+            
+            // Pernas Esquerdas
+            if (strstr(name, "l thigh") || strstr(name, "l_thigh") || strstr(name, "leftupleg") || strstr(name, "left upleg") || strstr(name, "left thigh")) return 1;
+            if (strstr(name, "l calf") || strstr(name, "l_calf") || strstr(name, "leftleg") || strstr(name, "left leg") || strstr(name, "left calf")) return 3;
+            if (strstr(name, "l foot") || strstr(name, "l_foot") || strstr(name, "leftfoot") || strstr(name, "left foot")) return 5;
+            if (strstr(name, "l toe") || strstr(name, "l_toe") || strstr(name, "lefttoe") || strstr(name, "left toe")) return 5;
+            
+            // Pernas Direitas
+            if (strstr(name, "r thigh") || strstr(name, "r_thigh") || strstr(name, "rightupleg") || strstr(name, "right upleg") || strstr(name, "right thigh")) return 2;
+            if (strstr(name, "r calf") || strstr(name, "r_calf") || strstr(name, "rightleg") || strstr(name, "right leg") || strstr(name, "right calf")) return 4;
+            if (strstr(name, "r foot") || strstr(name, "r_foot") || strstr(name, "rightfoot") || strstr(name, "right foot")) return 6;
+            if (strstr(name, "r toe") || strstr(name, "r_toe") || strstr(name, "righttoe") || strstr(name, "right toe")) return 6;
+            
+            // Se for exatamente "bip01" e não "bip01 xxx", assumimos como pelvis/root
+            if (strcmp(name, "bip01") == 0) return 0;
+            
+            return -1;
+        };
+
+        std::function<void(void*, CachedAnimatorInfo*)> cacheGenericBones = [&](void* transform, CachedAnimatorInfo* info) {
+            if (!transform || !getNameMethod || !getChildCountMethod || !getChildMethod) return;
+            
+            void* nameObj = Il2Cpp::runtime_invoke(getNameMethod, transform, nullptr, nullptr);
+            if (nameObj) {
+                int len = *(int*)((uintptr_t)nameObj + 0x10);
+                const char* chars = (const char*)((uintptr_t)nameObj + 0x14);
+                char cStr[128] = {0};
+                for (int i = 0; i < len && i < 127; ++i) cStr[i] = chars[i*2];
+                
+                int bId = mapNameToBoneId(cStr);
+                if (bId != -1 && info->boneTransforms.find(bId) == info->boneTransforms.end()) {
+                    info->boneTransforms[bId] = transform;
+                }
+            }
+            
+            void* countExc = nullptr;
+            void* countObj = Il2Cpp::runtime_invoke(getChildCountMethod, transform, nullptr, &countExc);
+            if (countObj && !countExc) {
+                int childCount = *(int*)((uintptr_t)countObj + 0x10);
+                for (int i = 0; i < childCount; ++i) {
+                    void* args[1] = { &i };
+                    void* childExc = nullptr;
+                    void* childTransform = Il2Cpp::runtime_invoke(getChildMethod, transform, args, &childExc);
+                    if (childTransform && !childExc) {
+                        cacheGenericBones(childTransform, info);
+                    }
+                }
+            }
+        };
+
+        auto getBonePosCached = [&](CachedAnimatorInfo* info, int boneId, bool& success) -> Vector3Args {
             success = false;
             Vector3Args pos = {0, 0, 0};
-            if (!info || !info->animatorObj || !getBoneTransformMethod || !getPosMethod) return pos;
+            if (!info || !info->animatorObj || !getPosMethod) return pos;
 
             void* boneTransform = nullptr;
             auto bit = info->boneTransforms.find(boneId);
             if (bit != info->boneTransforms.end()) {
                 boneTransform = bit->second;
             } else {
-                void* exc = nullptr;
-                void* args[1] = { &boneId };
-                boneTransform = Il2Cpp::runtime_invoke(getBoneTransformMethod, info->animatorObj, args, &exc);
-                info->boneTransforms[boneId] = (exc == nullptr) ? boneTransform : nullptr;
+                if (!info->genericRigCached && getBoneTransformMethod) {
+                    void* exc = nullptr;
+                    void* args[1] = { &boneId };
+                    boneTransform = Il2Cpp::runtime_invoke(getBoneTransformMethod, info->animatorObj, args, &exc);
+                    
+                    if (exc || !boneTransform) {
+                        info->genericRigCached = true;
+                        if (getTransformMethod) {
+                            void* rootTransform = Il2Cpp::runtime_invoke(getTransformMethod, info->animatorObj, nullptr, nullptr);
+                            if (rootTransform) {
+                                cacheGenericBones(rootTransform, info);
+                            }
+                        }
+                        bit = info->boneTransforms.find(boneId);
+                        if (bit != info->boneTransforms.end()) boneTransform = bit->second;
+                    } else {
+                        info->boneTransforms[boneId] = boneTransform;
+                    }
+                } else if (info->genericRigCached) {
+                    // Já cacheou a árvore toda, não tenta procurar de novo
+                }
             }
             
             if (boneTransform) {
@@ -729,7 +880,10 @@ extern Menu* g_Menu;
             }
             
             componentKlass = Il2Cpp::GetClass("UnityEngine.CoreModule.dll", "UnityEngine", "Component");
-            if (componentKlass) {
+              if (!componentKlass) {
+                  componentKlass = Il2Cpp::GetClass("UnityEngine.dll", "UnityEngine", "Component");
+              }
+              if (componentKlass) {
                 getTransformMethod = Il2Cpp::GetMethodRecursively(componentKlass, "get_transform", 0);
             }
             
@@ -738,6 +892,13 @@ extern Menu* g_Menu;
                 getPosMethod = Il2Cpp::GetMethodRecursively(transformKlass, "get_position", 0);
                 getRotMethod = Il2Cpp::GetMethodRecursively(transformKlass, "get_rotation", 0);
                 setRotMethod = Il2Cpp::GetMethodRecursively(transformKlass, "set_rotation", 1);
+                getChildCountMethod = Il2Cpp::GetMethodRecursively(transformKlass, "get_childCount", 0);
+                getChildMethod = Il2Cpp::GetMethodRecursively(transformKlass, "GetChild", 1);
+            }
+            
+            void* objectKlass = Il2Cpp::GetClass("UnityEngine.CoreModule.dll", "UnityEngine", "Object");
+            if (objectKlass) {
+                getNameMethod = Il2Cpp::GetMethodRecursively(objectKlass, "get_name", 0);
             }
             
             quatKlass = Il2Cpp::GetClass("UnityEngine.CoreModule.dll", "UnityEngine", "Quaternion");
@@ -759,18 +920,56 @@ extern Menu* g_Menu;
         // Cache do metodo SetAimRotation no Player e outros metodos dependentes do jogador
         if ((!setAimRotationMethod || !getBoneTransformMethod) && sharedState.localPlayerObj) {
             void* playerKlass = Il2Cpp::object_get_class(sharedState.localPlayerObj);
-            if (playerKlass) {
-                setAimRotationMethod = Il2Cpp::GetMethodRecursively(playerKlass, "SetAimRotation", 2);
-                isFiringMethod = Il2Cpp::GetMethodRecursively(playerKlass, "IsFiring", 0);
+              if (playerKlass) {
+                  setAimRotationMethod = Il2Cpp::GetMethodRecursively(playerKlass, "SetAimRotation", 2);
+                  isFiringMethod = Il2Cpp::GetMethodRecursively(playerKlass, "IsFiring", 0);
                   getHeadTFMethod = Il2Cpp::GetMethodRecursively(playerKlass, "GetHeadTF", 0);
-                  getComponentMethod = Il2Cpp::GetMethodRecursively(componentKlass, "GetComponentInChildren", 2); // 2 args: Type, bool includeInactive (Evita bug de ambiguidade)
+                    // Busca manual robusta para evitar overloads genéricos (que causam null/crash)
+                      getComponentMethod = nullptr;
+                      void* iter = nullptr;
+                      while (void* method = Il2Cpp::class_get_methods(componentKlass, &iter)) {
+                          const char* methodName = Il2Cpp::method_get_name(method);
+                          if (strcmp(methodName, "GetComponentInChildren") == 0) {
+                              uint32_t pCount = Il2Cpp::method_get_param_count(method);
+                              if (pCount > 0) {
+                                  void* paramType = Il2Cpp::method_get_param(method, 0);
+                                  const char* paramTypeName = Il2Cpp::type_get_name(paramType);
+                                  if (paramTypeName && strstr(paramTypeName, "Type")) {
+                                      getComponentMethod = method;
+                                      if (pCount == 2) break; // Preferência pela sobrecarga de 2 args (Type, bool)
+                                  }
+                              }
+                          }
+                      }
+                }
+
+              void* animatorKlass = Il2Cpp::GetClass("UnityEngine.AnimationModule.dll", "UnityEngine", "Animator");
+              if (!animatorKlass) {
+                  animatorKlass = Il2Cpp::GetClass("UnityEngine.CoreModule.dll", "UnityEngine", "Animator");
               }
-            
-            void* animatorKlass = Il2Cpp::GetClass("UnityEngine.AnimationModule.dll", "UnityEngine", "Animator");
-            if (animatorKlass) {
-                getBoneTransformMethod = Il2Cpp::GetMethodRecursively(animatorKlass, "GetBoneTransform", 1);
-                animatorTypeObject = Il2Cpp::type_get_object(Il2Cpp::class_get_type(animatorKlass));
-            }
+              if (!animatorKlass) {
+                  animatorKlass = Il2Cpp::GetClass("UnityEngine.dll", "UnityEngine", "Animator");
+              }
+              if (animatorKlass) {
+                  getBoneTransformMethod = nullptr;
+                      void* iter = nullptr;
+                      while (void* method = Il2Cpp::class_get_methods(animatorKlass, &iter)) {
+                          const char* methodName = Il2Cpp::method_get_name(method);
+                          if (strcmp(methodName, "GetBoneTransform") == 0 && Il2Cpp::method_get_param_count(method) == 1) {
+                              void* paramType = Il2Cpp::method_get_param(method, 0);
+                              const char* paramTypeName = Il2Cpp::type_get_name(paramType);
+                              if (paramTypeName && (strstr(paramTypeName, "HumanBodyBones") || strstr(paramTypeName, "Int32"))) {
+                                  getBoneTransformMethod = method;
+                                  break;
+                              }
+                          }
+                      }
+                      if (!getBoneTransformMethod) {
+                          // Fallback se a reflexão bruta falhar
+                          getBoneTransformMethod = Il2Cpp::GetMethodRecursively(animatorKlass, "GetBoneTransform", 1);
+                      }
+                  animatorTypeObject = Il2Cpp::type_get_object(Il2Cpp::class_get_type(animatorKlass));
+              }
         }
 
         if (!get_mainMethod || !worldToScreenMethod) return;
@@ -797,11 +996,26 @@ extern Menu* g_Menu;
           Vector3Args bestTargetWorldPosHead = {0, 0, 0};
           Vector3Args bestTargetWorldPosChest = {0, 0, 0};
           bool foundAimbotTarget = false;
-          void* bestTargetObj = nullptr;
-          std::vector<std::pair<void*, bool>> fovStates;
+            void* bestTargetObj = nullptr;
+            std::vector<std::pair<void*, bool>> fovStates;
 
-          for (const auto& entity : localEntities) {
-            // Ignora se estiver morto e o filtro de mortos estiver ativo (opcional, aqui pularemos mortos sempre pra nao poluir)
+            for (auto& entity : localEntities) {
+                // Atualiza posicao real do pe em tempo real no MainThread para evitar desync
+                if (getTransformMethod && entity.obj) {
+                    void* excPos = nullptr;
+                    void* entityTransform = Il2Cpp::runtime_invoke(getTransformMethod, entity.obj, nullptr, &excPos);
+                    if (entityTransform && !excPos) {
+                        void* entityPosObj = Il2Cpp::runtime_invoke(getPosMethod, entityTransform, nullptr, &excPos);
+                        if (entityPosObj && !excPos) {
+                            Vector3Args newPos = *(Vector3Args*)((uintptr_t)entityPosObj + 0x10);
+                            entity.position.x = newPos.x;
+                            entity.position.y = newPos.y;
+                            entity.position.z = newPos.z;
+                        }
+                    }
+                }
+
+              // Ignora se estiver morto e o filtro de mortos estiver ativo (opcional, aqui pularemos mortos sempre pra nao poluir)
             if (!entity.isAlive()) continue;
             
             // Calcula a distância 3D entre o jogador local e a entidade
@@ -912,12 +1126,13 @@ extern Menu* g_Menu;
                                 CachedAnimatorInfo* info = &cachedAnimators[entity.obj];
                                 auto nowMsLocal = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
                                 if ((!info->hasAttempted || (nowMsLocal - info->lastAttemptMs > 2000 && !info->animatorObj)) && animatorTypeObject) {
-                                    void* exc = nullptr;
-                                    bool includeInactive = true;
-                                    void* args[2] = { animatorTypeObject, &includeInactive };
-                                    void* animObj = Il2Cpp::runtime_invoke(getComponentMethod, entity.obj, args, &exc);
-                                    info->animatorObj = (!exc) ? animObj : nullptr;
-                                    info->hasAttempted = true;
+                                      void* exc = nullptr;
+                                      bool includeInactive = true;
+                                      void* args[2] = { animatorTypeObject, &includeInactive };
+                                      uint32_t pCount = Il2Cpp::method_get_param_count(getComponentMethod);
+                                      void* animObj = Il2Cpp::runtime_invoke(getComponentMethod, entity.obj, pCount == 2 ? args : &args[0], &exc);
+                                      info->animatorObj = (!exc) ? animObj : nullptr;
+                                      info->hasAttempted = true;
                                     info->lastAttemptMs = nowMsLocal;
                                 }
                             if (info->animatorObj) {
@@ -973,25 +1188,28 @@ extern Menu* g_Menu;
 
                 if (espSkeleton) {
                     if (!entity.obj) {
-                        drawList->AddText(topLeft, IM_COL32(255, 0, 0, 255), "entity.obj == null");
-                    } else if (!getComponentMethod) {
-                        drawList->AddText(topLeft, IM_COL32(255, 0, 0, 255), "getComponentMethod == null");
-                    } else if (!animatorTypeObject) {
-                        drawList->AddText(topLeft, IM_COL32(255, 0, 0, 255), "animatorTypeObject == null");
-                    } else if (!getBoneTransformMethod) {
-                        drawList->AddText(topLeft, IM_COL32(255, 0, 0, 255), "getBoneTransformMethod == null");
-                    } else {
-                        CachedAnimatorInfo* info = &cachedAnimators[entity.obj];
+                          drawList->AddText(topLeft, IM_COL32(255, 0, 0, 255), "entity.obj == null");
+                      } else if (!getComponentMethod) {
+                          drawList->AddText(topLeft, IM_COL32(255, 0, 0, 255), "getComponentMethod == null");
+                      } else if (!animatorTypeObject) {
+                          drawList->AddText(topLeft, IM_COL32(255, 0, 0, 255), "animatorTypeObject == null");
+                      } else if (!getBoneTransformMethod) {
+                          drawList->AddText(topLeft, IM_COL32(255, 0, 0, 255), "getBoneTransformMethod == null");
+                      } else if (!getPosMethod) {
+                          drawList->AddText(topLeft, IM_COL32(255, 0, 0, 255), "getPosMethod == null");
+                      } else {
+                          CachedAnimatorInfo* info = &cachedAnimators[entity.obj];
                         auto nowMsLocal = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
                         if (!info->hasAttempted || (nowMsLocal - info->lastAttemptMs > 2000 && !info->animatorObj)) {
-                            void* exc = nullptr;
-                            bool includeInactive = true;
-                            void* args[2] = { animatorTypeObject, &includeInactive };
-                            void* animObj = Il2Cpp::runtime_invoke(getComponentMethod, entity.obj, args, &exc);
-                            info->animatorObj = (!exc) ? animObj : nullptr;
-                            info->hasAttempted = true;
-                            info->lastAttemptMs = nowMsLocal;
-                        }
+                              void* exc = nullptr;
+                              bool includeInactive = true;
+                              void* args[2] = { animatorTypeObject, &includeInactive };
+                              uint32_t pCount = Il2Cpp::method_get_param_count(getComponentMethod);
+                              void* animObj = Il2Cpp::runtime_invoke(getComponentMethod, entity.obj, pCount == 2 ? args : &args[0], &exc);
+                              info->animatorObj = (!exc) ? animObj : nullptr;
+                              info->hasAttempted = true;
+                              info->lastAttemptMs = nowMsLocal;
+                          }
                         
                         if (!info->animatorObj) {
                             drawList->AddText(topLeft, IM_COL32(255, 0, 0, 255), "animatorObj == null");
@@ -1049,12 +1267,54 @@ extern Menu* g_Menu;
                             drawBoneLine(3, 5);   // LeftLowerLeg -> LeftFoot
                             
                             // Pernas (Direita)
-                            drawBoneLine(0, 2);   // Hips -> RightUpperLeg
-                            drawBoneLine(2, 4);   // RightUpperLeg -> RightLowerLeg
-                            drawBoneLine(4, 6);   // RightLowerLeg -> RightFoot
-                        }
-                    }
-                } // Fim do espSkeleton
+                              drawBoneLine(0, 2);   // Hips -> RightUpperLeg
+                              drawBoneLine(2, 4);   // RightUpperLeg -> RightLowerLeg
+                              drawBoneLine(4, 6);   // RightLowerLeg -> RightFoot
+
+                              bool anySuccess = false;
+                              for (int i = 0; i < 30; ++i) if (hasBone[i]) anySuccess = true;
+                              if (!anySuccess) {
+                                  // Debug text to understand why no bones are drawing
+                                  void* excDebug = nullptr;
+                                    int bIdDebug = 10; // Head
+                                    void* argsDebug[1] = { &bIdDebug };
+                                    void* boneTransformDebug = Il2Cpp::runtime_invoke(getBoneTransformMethod, info->animatorObj, argsDebug, &excDebug);
+                                    if (excDebug) {
+                                        std::string excMsg = "Exception";
+                                        void* exceptionKlass = Il2Cpp::object_get_class(excDebug);
+                                        if (exceptionKlass) {
+                                            void* getMessageMethod = Il2Cpp::GetMethodRecursively(exceptionKlass, "get_Message", 0);
+                                            if (getMessageMethod) {
+                                                void* strObj = Il2Cpp::runtime_invoke(getMessageMethod, excDebug, nullptr, nullptr);
+                                                if (strObj) {
+                                                    const char* strChars = (const char*)((uintptr_t)strObj + 0x14);
+                                                    int strLen = *(int*)((uintptr_t)strObj + 0x10);
+                                                    char cStr[128] = {0};
+                                                    for (int c = 0; c < strLen && c < 127; ++c) {
+                                                        cStr[c] = strChars[c * 2];
+                                                    }
+                                                    excMsg = std::string(cStr);
+                                                }
+                                            }
+                                        }
+                                        std::string drawStr = "GetBoneTransform throw: " + excMsg;
+                                        drawList->AddText(topLeft, IM_COL32(255, 165, 0, 255), drawStr.c_str());
+                                    } else if (!boneTransformDebug) {
+                                      drawList->AddText(topLeft, IM_COL32(255, 165, 0, 255), "boneTransform is null");
+                                  } else {
+                                      void* posObjDebug = Il2Cpp::runtime_invoke(getPosMethod, boneTransformDebug, nullptr, &excDebug);
+                                      if (excDebug) {
+                                          drawList->AddText(topLeft, IM_COL32(255, 165, 0, 255), "getPos threw exception");
+                                      } else if (!posObjDebug) {
+                                          drawList->AddText(topLeft, IM_COL32(255, 165, 0, 255), "posObj is null");
+                                      } else {
+                                          drawList->AddText(topLeft, IM_COL32(255, 165, 0, 255), "W2S or Z<0 failed");
+                                      }
+                                  }
+                              }
+                          }
+                      }
+                  } // Fim do espSkeleton
 
                 if (espLine) {
                     // Linha do topo da tela ate o jogador (DrawLine)
