@@ -56,8 +56,8 @@ namespace GhostSystems {
         }
 
         void updateImGui(ImGuiIO& io) {
-            io.AddMousePosEvent(currentX, currentY);
-            io.AddMouseButtonEvent(0, isDown);
+            io.AddMousePosEvent(currentX.load(std::memory_order_relaxed), currentY.load(std::memory_order_relaxed));
+            io.AddMouseButtonEvent(0, isDown.load(std::memory_order_relaxed));
         }
 
     private:
@@ -150,9 +150,13 @@ namespace GhostSystems {
                         } else if (ev.code == ABS_MT_POSITION_Y || ev.code == ABS_Y) {
                             y = ev.value;
                             currentY = (float)y / max_y * screenHeight;
+                        } else if (ev.code == ABS_MT_TRACKING_ID) {
+                            isDown = (ev.value != -1);
+                        } else if (ev.code == ABS_MT_PRESSURE || ev.code == ABS_PRESSURE) {
+                            isDown = (ev.value > 0);
                         }
                     } else if (ev.type == EV_KEY) {
-                        if (ev.code == BTN_TOUCH || ev.code == BTN_TOOL_FINGER) {
+                        if (ev.code == BTN_TOUCH || ev.code == BTN_TOOL_FINGER || ev.code == BTN_LEFT) {
                             isDown = (ev.value != 0);
                         }
                     } else if (ev.type == EV_SYN) {

@@ -13,7 +13,7 @@ namespace GhostSystems {
 
     class MemoryScanner {
     public:
-        MemoryScanner(GameState& state) : sharedState(state), isRunning(false) {}
+        MemoryScanner(GameState& state, FeatureConfig& config) : sharedState(state), featureConfig(config), isRunning(false) {}
 
         ~MemoryScanner() {
             stop();
@@ -21,19 +21,13 @@ namespace GhostSystems {
 
         void start() {
             if (isRunning) return;
-            isRunning = true;
-            
-            // Log offline para depuração
-            logger.open("/sdcard/Download/GhostSystems_Scan.log", std::ios::app);
-            if (logger.is_open()) {
-                logger << "[INFO] Inicializando Scanner de Memoria na Thread..." << std::endl;
+            if (!Il2Cpp::domain_get) {
+                if (!Il2Cpp::Initialize()) {
+                    return;
+                }
             }
 
-            // Inicializar Il2Cpp
-            if (!Il2Cpp::Initialize()) {
-                if (logger.is_open()) logger << "[ERRO] Falha ao inicializar Il2Cpp." << std::endl;
-                return;
-            }
+            isRunning = true;
 
             scanThread = std::thread(&MemoryScanner::scanLoop, this);
             scanThread.detach();
@@ -41,17 +35,283 @@ namespace GhostSystems {
 
         void stop() {
             isRunning = false;
-            if (logger.is_open()) {
-                logger << "[INFO] Encerrando Scanner de Memoria." << std::endl;
-                logger.close();
-            }
+            if (logger.is_open()) logger.close();
         }
 
     private:
         GameState& sharedState;
+        FeatureConfig& featureConfig;
         bool isRunning;
         std::thread scanThread;
         std::ofstream logger;
+
+        Alignment calculateAlignment(PlayerEntity& entity, int localTeamId, void* localObj) {
+            if (!featureConfig.teamCheckEnabled) {
+                return entity.teamId == localTeamId ? Alignment::ALLY : Alignment::ENEMY;
+            }
+
+            switch (featureConfig.teamCheckMethod) {
+                case 0: {
+                    if (logger.is_open()) logger << "[TEAM] Method 0: GameData.GetMyTeamID" << std::endl;
+                    void* teamClass = Il2Cpp::GetClass("Assembly-CSharp.dll", "COW", "GameData");
+                    if (!teamClass) {
+                        if (logger.is_open()) logger << "[TEAM] GameData class not found, fallback to teamId" << std::endl;
+                        return entity.teamId == localTeamId ? Alignment::ALLY : Alignment::ENEMY;
+                    }
+                    void* getMyTeamMethod = Il2Cpp::class_get_method_from_name(teamClass, "GetMyTeamID", 0);
+                    if (!getMyTeamMethod) {
+                        if (logger.is_open()) logger << "[TEAM] GetMyTeamID method not found, fallback to teamId" << std::endl;
+                        return entity.teamId == localTeamId ? Alignment::ALLY : Alignment::ENEMY;
+                    }
+                    void* result = Il2Cpp::runtime_invoke(getMyTeamMethod, nullptr, nullptr, nullptr);
+                    if (result) {
+                        int myTeamId = *(int32_t*)((uintptr_t)result + 0x10);
+                        if (logger.is_open()) logger << "[TEAM] GetMyTeamID returned: " << myTeamId << std::endl;
+                        return entity.teamId == myTeamId ? Alignment::ALLY : Alignment::ENEMY;
+                    }
+                    if (logger.is_open()) logger << "[TEAM] GetMyTeamID result null, fallback to teamId" << std::endl;
+                    return entity.teamId == localTeamId ? Alignment::ALLY : Alignment::ENEMY;
+                }
+                case 1: {
+                    if (logger.is_open()) logger << "[TEAM] Method 1: PlayerCache.GetTeamByObject" << std::endl;
+                    if (entity.teamId == localTeamId) return Alignment::ALLY;
+                    void* playerCacheClass = Il2Cpp::GetClass("Assembly-CSharp.dll", "COW", "PlayerCache");
+                    if (!playerCacheClass) {
+                        if (logger.is_open()) logger << "[TEAM] PlayerCache class not found, fallback to teamId" << std::endl;
+                        return entity.teamId == localTeamId ? Alignment::ALLY : Alignment::ENEMY;
+                    }
+                    void* getTeamByObjMethod = Il2Cpp::class_get_method_from_name(playerCacheClass, "GetTeamByObject", 1);
+                    if (!getTeamByObjMethod) {
+                        if (logger.is_open()) logger << "[TEAM] GetTeamByObject method not found, fallback to teamId" << std::endl;
+                        return entity.teamId == localTeamId ? Alignment::ALLY : Alignment::ENEMY;
+                    }
+                    void* args[1] = { entity.obj };
+                    void* result = Il2Cpp::runtime_invoke(getTeamByObjMethod, nullptr, args, nullptr);
+                    if (result) {
+                        int teamId = *(int32_t*)((uintptr_t)result + 0x10);
+                        if (logger.is_open()) logger << "[TEAM] GetTeamByObject returned: " << teamId << std::endl;
+                        return teamId == localTeamId ? Alignment::ALLY : Alignment::ENEMY;
+                    }
+                    if (logger.is_open()) logger << "[TEAM] GetTeamByObject result null" << std::endl;
+                    return Alignment::ENEMY;
+                }
+                case 2: {
+                    if (logger.is_open()) logger << "[TEAM] Method 2: TeamService.IsAlly" << std::endl;
+                    if (entity.teamId == localTeamId) return Alignment::ALLY;
+                    void* teamServiceClass = Il2Cpp::GetClass("Assembly-CSharp.dll", "COW", "TeamService");
+                    if (!teamServiceClass) {
+                        if (logger.is_open()) logger << "[TEAM] TeamService class not found, fallback to teamId" << std::endl;
+                        return entity.teamId == localTeamId ? Alignment::ALLY : Alignment::ENEMY;
+                    }
+                    void* isAllyMethod = Il2Cpp::class_get_method_from_name(teamServiceClass, "IsAlly", 1);
+                    if (!isAllyMethod) {
+                        if (logger.is_open()) logger << "[TEAM] IsAlly method not found, fallback to teamId" << std::endl;
+                        return entity.teamId == localTeamId ? Alignment::ALLY : Alignment::ENEMY;
+                    }
+                    void* args[1] = { entity.obj };
+                    void* result = Il2Cpp::runtime_invoke(isAllyMethod, nullptr, args, nullptr);
+                    if (result) {
+                        bool isAlly = *(bool*)((uintptr_t)result + 0x10);
+                        if (logger.is_open()) logger << "[TEAM] IsAlly returned: " << (isAlly ? "true" : "false") << std::endl;
+                        return isAlly ? Alignment::ALLY : Alignment::ENEMY;
+                    }
+                    if (logger.is_open()) logger << "[TEAM] IsAlly result null, fallback to teamId" << std::endl;
+                    return entity.teamId == localTeamId ? Alignment::ALLY : Alignment::ENEMY;
+                }
+                case 3: {
+                    if (logger.is_open()) logger << "[TEAM] Method 3: Fallback teamId compare (local=" << localTeamId << ")" << std::endl;
+                    return entity.teamId == localTeamId ? Alignment::ALLY : Alignment::ENEMY;
+                }
+                case 4: {
+                    if (logger.is_open()) logger << "[TEAM] Method 4: Always NEUTRAL" << std::endl;
+                    return Alignment::NEUTRAL;
+                }
+                case 5: {
+                    if (logger.is_open()) logger << "[TEAM] Method 5: Alignment.GetAlignment" << std::endl;
+                    if (entity.teamId == localTeamId) return Alignment::ALLY;
+                    void* alignmentClass = Il2Cpp::GetClass("Assembly-CSharp.dll", "COW", "Alignment");
+                    if (!alignmentClass) {
+                        if (logger.is_open()) logger << "[TEAM] Alignment class not found, fallback to teamId" << std::endl;
+                        return entity.teamId == localTeamId ? Alignment::ALLY : Alignment::ENEMY;
+                    }
+                    void* getAlignmentMethod = Il2Cpp::class_get_method_from_name(alignmentClass, "GetAlignment", 1);
+                    if (!getAlignmentMethod) {
+                        if (logger.is_open()) logger << "[TEAM] GetAlignment method not found, fallback to teamId" << std::endl;
+                        return entity.teamId == localTeamId ? Alignment::ALLY : Alignment::ENEMY;
+                    }
+                    void* args[1] = { entity.obj };
+                    void* result = Il2Cpp::runtime_invoke(getAlignmentMethod, nullptr, args, nullptr);
+                    if (result) {
+                        int alignVal = *(int32_t*)((uintptr_t)result + 0x10);
+                        if (logger.is_open()) logger << "[TEAM] GetAlignment returned: " << alignVal << std::endl;
+                        return alignVal == 0 ? Alignment::ALLY : Alignment::ENEMY;
+                    }
+                    if (logger.is_open()) logger << "[TEAM] GetAlignment result null, fallback to teamId" << std::endl;
+                    return entity.teamId == localTeamId ? Alignment::ALLY : Alignment::ENEMY;
+                }
+                case 6: {
+                    if (logger.is_open()) logger << "[TEAM] Method 6: IsSameTeamWithPlayerID (AttackableEntity)" << std::endl;
+                    if (!localObj || !entity.obj) {
+                        if (logger.is_open()) logger << "[TEAM] localObj or entity.obj null, fallback to teamId" << std::endl;
+                        return entity.teamId == localTeamId ? Alignment::ALLY : Alignment::ENEMY;
+                    }
+                    void* attackableClass = Il2Cpp::GetClass("Assembly-CSharp.dll", "COW.GamePlay", "AttackableEntity");
+                    if (!attackableClass) {
+                        if (logger.is_open()) logger << "[TEAM] AttackableEntity class not found" << std::endl;
+                        return entity.teamId == localTeamId ? Alignment::ALLY : Alignment::ENEMY;
+                    }
+                    void* isSameTeamMethod = Il2Cpp::class_get_method_from_name(attackableClass, "IsSameTeamWithPlayerID", 1);
+                    if (!isSameTeamMethod) {
+                        if (logger.is_open()) logger << "[TEAM] IsSameTeamWithPlayerID method not found, fallback to teamId" << std::endl;
+                        return entity.teamId == localTeamId ? Alignment::ALLY : Alignment::ENEMY;
+                    }
+                    uint64_t localPlayerId = *(uint64_t*)((uintptr_t)localObj + 0x3B0);
+                    uint64_t entityPlayerId = *(uint64_t*)((uintptr_t)entity.obj + 0x3B0);
+                    if (localPlayerId == 0 || entityPlayerId == 0) {
+                        if (logger.is_open()) logger << "[TEAM] Player ID is null, fallback to teamId" << std::endl;
+                        return entity.teamId == localTeamId ? Alignment::ALLY : Alignment::ENEMY;
+                    }
+                    struct IHAAMHPPLMG {
+                        uint32_t NBPDJAAAFBH;
+                        uint32_t JEDDPHIHGKL;
+                        uint8_t IOICFFEKAIL;
+                    };
+                    IHAAMHPPLMG playerIdStruct = {0};
+                    uint32_t lowPart = (uint32_t)(entityPlayerId & 0xFFFFFFFF);
+                    uint32_t highPart = (uint32_t)((entityPlayerId >> 32) & 0xFFFFFFFF);
+                    playerIdStruct.NBPDJAAAFBH = lowPart;
+                    playerIdStruct.JEDDPHIHGKL = highPart;
+                    playerIdStruct.IOICFFEKAIL = 0;
+                    void* args[1] = { &playerIdStruct };
+                    void* result = Il2Cpp::runtime_invoke(isSameTeamMethod, localObj, args, nullptr);
+                    if (result) {
+                        bool isSameTeam = *(bool*)((uintptr_t)result + 0x10);
+                        if (logger.is_open()) logger << "[TEAM] IsSameTeamWithPlayerID(playerId=" << entityPlayerId << ") returned: " << (isSameTeam ? "ally" : "enemy") << std::endl;
+                        return isSameTeam ? Alignment::ALLY : Alignment::ENEMY;
+                    }
+                    if (logger.is_open()) logger << "[TEAM] IsSameTeamWithPlayerID result null, fallback to teamId" << std::endl;
+                    return entity.teamId == localTeamId ? Alignment::ALLY : Alignment::ENEMY;
+                }
+                case 7: {
+                    if (logger.is_open()) logger << "[TEAM] Method 7: Fallback teamId compare (local=" << localTeamId << ")" << std::endl;
+                    return entity.teamId == localTeamId ? Alignment::ALLY : Alignment::ENEMY;
+                }
+                default: {
+                    if (logger.is_open()) logger << "[TEAM] Method default: Fallback teamId compare (local=" << localTeamId << ")" << std::endl;
+                    return entity.teamId == localTeamId ? Alignment::ALLY : Alignment::ENEMY;
+                }
+            }
+        }
+
+        bool checkWall(PlayerEntity& target, Vector3& localPos) {
+            if (logger.is_open()) logger << "[WALL] === checkWall called ===" << std::endl;
+            if (logger.is_open()) logger << "[WALL] localPos=(" << localPos.x << "," << localPos.y << "," << localPos.z << ")" << std::endl;
+            if (logger.is_open()) logger << "[WALL] targetPos=(" << target.position.x << "," << target.position.y << "," << target.position.z << ")" << std::endl;
+
+            if (!featureConfig.wallCheckEnabled) {
+                if (logger.is_open()) logger << "[WALL] wallCheckEnabled=false, skipping" << std::endl;
+                return false;
+            }
+
+            float eyeHeightOffset = 1.6f;
+            Vector3 eyePos = localPos;
+            eyePos.y += eyeHeightOffset;
+
+            Vector3 targetEyePos = target.position;
+            targetEyePos.y += eyeHeightOffset;
+
+            Vector3 dir = targetEyePos;
+            dir.x -= eyePos.x;
+            dir.y -= eyePos.y;
+            dir.z -= eyePos.z;
+            float dist = sqrtf(dir.x*dir.x + dir.y*dir.y + dir.z*dir.z);
+            if (dist > 0.001f) {
+                dir.x /= dist; dir.y /= dist; dir.z /= dist;
+            }
+            if (logger.is_open()) logger << "[WALL] distance=" << dist << " dir=(" << dir.x << "," << dir.y << "," << dir.z << ")" << std::endl;
+
+            if (dist < 0.5f) {
+                if (logger.is_open()) logger << "[WALL] Target very close, assuming clear" << std::endl;
+                return false;
+            }
+
+            bool result = false;
+
+            if (featureConfig.wallCheckMethod == 0 || featureConfig.wallCheckMethod == 1) {
+                void* physicsClass = Il2Cpp::GetClass("UnityEngine.PhysicsModule.dll", "UnityEngine", "Physics");
+                if (!physicsClass) {
+                    if (logger.is_open()) logger << "[WALL] FAIL: Physics class not found!" << std::endl;
+                    return false;
+                }
+                if (logger.is_open()) logger << "[WALL] Physics class found, trying Raycast(3)" << std::endl;
+
+                void* raycastMethod = Il2Cpp::class_get_method_from_name(physicsClass, "Raycast", 5);
+                if (!raycastMethod) {
+                    raycastMethod = Il2Cpp::class_get_method_from_name(physicsClass, "Raycast", 4);
+                }
+                if (!raycastMethod) {
+                    raycastMethod = Il2Cpp::class_get_method_from_name(physicsClass, "Raycast", 3);
+                }
+
+                if (raycastMethod) {
+                    if (logger.is_open()) logger << "[WALL] Raycast found, invoking with eye positions..." << std::endl;
+
+                    float maxDist = dist;
+                    Vector3 origin = eyePos;
+                    Vector3 direction = dir;
+                    int layerMask = 0xFFFFFFFF;
+
+                    void* args[6] = { nullptr, &origin, &direction, nullptr, &maxDist, &layerMask };
+
+                    void* ret = Il2Cpp::runtime_invoke(raycastMethod, nullptr, args, nullptr);
+                    if (ret) {
+                        bool hit = *(bool*)ret;
+                        if (logger.is_open()) logger << "[WALL] Raycast returned hit=" << (hit ? "true" : "false") << std::endl;
+                        result = hit;
+                    } else {
+                        if (logger.is_open()) logger << "[WALL] Raycast result=null" << std::endl;
+                    }
+                } else {
+                    if (logger.is_open()) logger << "[WALL] Raycast not found, trying Linecast" << std::endl;
+                    void* linecastMethod = Il2Cpp::class_get_method_from_name(physicsClass, "Linecast", 3);
+                    if (!linecastMethod) {
+                        linecastMethod = Il2Cpp::class_get_method_from_name(physicsClass, "Linecast", 4);
+                    }
+                    if (!linecastMethod) {
+                        linecastMethod = Il2Cpp::class_get_method_from_name(physicsClass, "Linecast", 5);
+                    }
+
+                    if (linecastMethod) {
+                        if (logger.is_open()) logger << "[WALL] Linecast found, invoking..." << std::endl;
+                        Vector3 start = eyePos;
+                        Vector3 end = targetEyePos;
+                        void* invokeArgs[4] = { nullptr, &start, &end, nullptr };
+                        void* ret = Il2Cpp::runtime_invoke(linecastMethod, nullptr, invokeArgs, nullptr);
+                        if (ret) {
+                            bool hit = *(bool*)ret;
+                            if (logger.is_open()) logger << "[WALL] Linecast hit=" << (hit ? "true" : "false") << std::endl;
+                            result = hit;
+                        }
+                    } else {
+                        if (logger.is_open()) logger << "[WALL] Linecast not found either" << std::endl;
+                    }
+                }
+            } else if (featureConfig.wallCheckMethod == 2) {
+                if (logger.is_open()) logger << "[WALL] Method 2: Distance-based check" << std::endl;
+                if (dist < 3.0f) {
+                    if (logger.is_open()) logger << "[WALL] Target very close (" << dist << "m), assuming no wall" << std::endl;
+                    result = false;
+                } else {
+                    result = false;
+                }
+            } else {
+                if (logger.is_open()) logger << "[WALL] Method 3: Disabled" << std::endl;
+                result = false;
+            }
+
+            if (logger.is_open()) logger << "[WALL] Final result: " << (result ? "BLOCKED" : "CLEAR") << std::endl;
+            return result;
+        }
 
         void scanLoop() {
             if (Il2Cpp::thread_attach && Il2Cpp::domain_get) {
@@ -106,13 +366,15 @@ namespace GhostSystems {
                 }
 
                 if (!dictionaryObj) {
-                    if (logger.is_open()) logger << "[SCAN] dictionaryObj is null." << std::endl;
                 } else {
                         void* entriesArray = nullptr;
                         int count = 0;
                         if (Il2Cpp::GetDictionaryValues(dictionaryObj, &entriesArray, &count)) {
-                            if (logger.is_open()) logger << "[SCAN] GetDictionaryValues success, count: " << count << std::endl;
                             if (entriesArray && count > 0) {
+                            if (Il2Cpp::array_length) {
+                                int arrayLen = (int)Il2Cpp::array_length(entriesArray);
+                                if (arrayLen > 0 && count > arrayLen) count = arrayLen;
+                            }
                             
                             // Em C#, array data comeca no offset 0x20.
                             // O Entry struct no Dictionary<uint, ReplicationEntity> tem:
@@ -143,11 +405,6 @@ namespace GhostSystems {
                                     if (!entityKlass) continue;
                                     
                                     const char* className = Il2Cpp::class_get_name(entityKlass);
-                                    
-                                    // Log para debug
-                                    if (logger.is_open()) {
-                                        logger << "[DEBUG] Found Entity class: " << (className ? className : "null") << std::endl;
-                                    }
 
                                     if (Il2Cpp::IsSubclassOf(entityKlass, "Player")) {
                                         PlayerEntity p;
@@ -163,15 +420,15 @@ namespace GhostSystems {
                                         p.distanceToLocal = 100.0f;
                                         p.alignment = Alignment::ENEMY;
 
+                                        static void* cachedMethodsKlass = nullptr;
                                         static void* getNickNameMethod = nullptr;
                                         static void* isAIMethod = nullptr;
                                         static void* getPosMethod = nullptr;
                                         static void* getTeamMethod = nullptr;
                                         static void* getIsDeadMethod = nullptr;
                                         static void* isLocalMethod = nullptr;
-                                        static bool methodsCached = false;
 
-                                        if (!methodsCached) {
+                                        if (cachedMethodsKlass != entityKlass) {
                                             getNickNameMethod = Il2Cpp::GetMethodRecursively(entityKlass, "GetNickName", 0);
                                             if (!getNickNameMethod) getNickNameMethod = Il2Cpp::GetMethodRecursively(entityKlass, "get_NickName", 0);
                                             if (!getNickNameMethod) getNickNameMethod = Il2Cpp::GetMethodRecursively(entityKlass, "get_Nickname", 0);
@@ -183,6 +440,9 @@ namespace GhostSystems {
 
                                             getPosMethod = Il2Cpp::GetMethodRecursively(entityKlass, "get_Position", 0);
                                             getTeamMethod = Il2Cpp::GetMethodRecursively(entityKlass, "get_TeamID", 0);
+                                            if (!getTeamMethod) getTeamMethod = Il2Cpp::GetMethodRecursively(entityKlass, "GetTeamID", 0);
+                                            if (!getTeamMethod) getTeamMethod = Il2Cpp::GetMethodRecursively(entityKlass, "get_Team", 0);
+                                            if (!getTeamMethod) getTeamMethod = Il2Cpp::GetMethodRecursively(entityKlass, "TeamID", 0);
                                             getIsDeadMethod = Il2Cpp::GetMethodRecursively(entityKlass, "get_IsDead", 0);
 
                                             isLocalMethod = Il2Cpp::GetMethodRecursively(entityKlass, "IsLocalPlayer", 0);
@@ -190,8 +450,7 @@ namespace GhostSystems {
                                             if (!isLocalMethod) isLocalMethod = Il2Cpp::GetMethodRecursively(entityKlass, "get_IsLocal", 0);
                                             if (!isLocalMethod) isLocalMethod = Il2Cpp::GetMethodRecursively(entityKlass, "get_IsLocalPlayer", 0);
                                             if (!isLocalMethod) isLocalMethod = Il2Cpp::GetMethodRecursively(entityKlass, "IsLocalAvatar", 0);
-
-                                            methodsCached = true;
+                                            cachedMethodsKlass = entityKlass;
                                         }
 
                                         if (getNickNameMethod) {
@@ -240,15 +499,15 @@ namespace GhostSystems {
                                         
                                         // HP e MaxHP (Tenta getter direto, se falhar, tenta via PlayerAttributes)
                                         bool hpFound = false;
+                                        static void* cachedHpKlass = nullptr;
                                         static void* getCurHpMethod = nullptr;
                                         static void* getMaxHpMethod = nullptr;
-                                        static bool hpMethodsSearched = false;
 
-                                        if (!hpMethodsSearched) {
+                                        if (cachedHpKlass != entityKlass) {
                                             getCurHpMethod = Il2Cpp::GetMethodRecursively(entityKlass, "get_CurHP", 0);
                                             if (!getCurHpMethod) getCurHpMethod = Il2Cpp::GetMethodRecursively(entityKlass, "get_HP", 0);
                                             getMaxHpMethod = Il2Cpp::GetMethodRecursively(entityKlass, "get_MaxHP", 0);
-                                            hpMethodsSearched = true;
+                                            cachedHpKlass = entityKlass;
                                         }
 
                                         if (getCurHpMethod) {
@@ -386,11 +645,12 @@ namespace GhostSystems {
                                         if (getTeamMethod) {
                                             void* teamObj = Il2Cpp::runtime_invoke(getTeamMethod, entityObj, nullptr, nullptr);
                                             if (teamObj) {
-                                                // Pode ser Byte ou Int32 dependendo da versão, lendo Int32 por segurança e fazendo cast.
-                                                // Se for byte o padding pode zerar os outros 3 bytes, mas é mais seguro ler 1 byte e dps ver.
-                                                // No dump.cs tem `public Int32 get_TeamID()` e `public Byte get_TeamID()`.
-                                                p.teamId = (int)(*(uint8_t*)((uintptr_t)teamObj + 0x10)); 
+                                                p.teamId = *(int32_t*)((uintptr_t)teamObj + 0x10);
+                                            } else {
+                                                p.teamId = *(int32_t*)((uintptr_t)entityObj + 0x3D8);
                                             }
+                                        } else {
+                                            p.teamId = *(int32_t*)((uintptr_t)entityObj + 0x3D8);
                                         }
 
                                         // Salva o ponteiro do objeto
@@ -410,15 +670,17 @@ namespace GhostSystems {
                                             }
                                         }
 
-                                        if (isLocal) {
+                                        if (isLocal && !foundLocal) {
                                             foundLocal = true;
                                             currentLocalPos = p.position;
                                             currentLocalTeamId = p.teamId;
                                             currentLocalObj = entityObj;
-                                            continue; // Ignora o player local na lista de inimigos
-                                        } else {
-                                            updatedEntities.push_back(p);
+                                            continue; // Ignora apenas o primeiro local detectado
                                         }
+
+                                        // Se IsLocal estiver bugado e retornar true para vários, não esvazia a lista:
+                                        // mantém os demais jogadores na Entity List.
+                                        updatedEntities.push_back(p);
                                     }
                                 }
                             }
@@ -427,29 +689,44 @@ namespace GhostSystems {
                 }
                 
                 if (foundLocal) {
-                    for (auto& p : updatedEntities) {
-                        p.distanceToLocal = p.position.distance(currentLocalPos);
-                        if (p.teamId == currentLocalTeamId) {
-                            p.alignment = Alignment::ALLY;
-                        } else {
-                            p.alignment = Alignment::ENEMY;
+                    {
+                        std::lock_guard<std::mutex> lockConfig(featureConfig.mtx);
+                        for (auto& p : updatedEntities) {
+                            p.distanceToLocal = p.position.distance(currentLocalPos);
+                            p.alignment = calculateAlignment(p, currentLocalTeamId, currentLocalObj);
+                            if (featureConfig.wallCheckEnabled && p.alignment == Alignment::ENEMY && p.distanceToLocal <= 350.0f) {
+                                  // Removido: O WallCheck pesado e inseguro (Raycast na thread secundária) foi transferido
+                                  // para o OnMainThreadTick no Menu.cpp, o que previne o travamento (crash/freeze) do jogo.
+                                  // A propriedade p.isVisible agora é atualizada na thread principal.
+                              }
                         }
                     }
                 }
 
                 {
-                    std::lock_guard<std::mutex> lock(sharedState.mtx);
-                    sharedState.entities = std::move(updatedEntities);
-                    if (foundLocal) {
-                        sharedState.localPlayerPos = currentLocalPos;
-                        sharedState.localPlayerTeamId = currentLocalTeamId;
-                        sharedState.localPlayerObj = currentLocalObj;
-                    }
-                }
+                      std::lock_guard<std::mutex> lock(sharedState.mtx);
+                      
+                      // Preservar o estado de visibilidade (isVisible) gerado pelo WallCheck no Main Thread.
+                      // Como o MemoryScanner recria as entidades, isso evita que o estado seja resetado
+                      // para 'true' a cada 100ms, causando piscadas (flickering) na tela e mira acidental.
+                      for (auto& newEnt : updatedEntities) {
+                          for (const auto& oldEnt : sharedState.entities) {
+                              if (newEnt.obj == oldEnt.obj && newEnt.baseAddress == oldEnt.baseAddress) {
+                                  newEnt.isVisible = oldEnt.isVisible;
+                                  newEnt.isInFov = oldEnt.isInFov;
+                                  newEnt.lastWallCheckMs = oldEnt.lastWallCheckMs;
+                                  break;
+                              }
+                          }
+                      }
 
-                if (logger.is_open()) {
-                    logger << "[SCAN] Atualizados " << sharedState.entities.size() << " jogadores." << std::endl;
-                }
+                      sharedState.entities = std::move(updatedEntities);
+                      if (foundLocal) {
+                          sharedState.localPlayerPos = currentLocalPos;
+                          sharedState.localPlayerTeamId = currentLocalTeamId;
+                          sharedState.localPlayerObj = currentLocalObj;
+                      }
+                  }
 
                 // Aumentamos o tempo de sleep para desafogar a thread do Android (isso previne o travamento do ImGui / Touch)
                 std::this_thread::sleep_for(std::chrono::milliseconds(100)); // Fixado em 100ms para scan loop não pesar mas ser mais fluido
