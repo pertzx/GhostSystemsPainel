@@ -175,38 +175,50 @@ extern Menu* g_Menu;
                 if (ImGui::BeginTabBar("MenuTabs")) {
                     if (ImGui::BeginTabItem(OBFUSCATE("Aimbot"))) {
                         ImGui::Checkbox(OBFUSCATE("Ativar Aimbot"), &aimbotEnabled);
-                        if (aimbotEnabled) {
+                        ImGui::Checkbox(OBFUSCATE("Silent Aim (Tiro Magico)"), &silentAim);
+                        ImGui::Checkbox(OBFUSCATE("No Recoil (Sem Recuo)"), &noRecoil);
+                        ImGui::TextColored(ImVec4(0.8f, 0.8f, 0.8f, 1.0f), "Status: %s", noRecoilLog);
+                        
+                        if (aimbotEnabled || silentAim) {
                             const char* aimbotModes[] = { "Tradicional (Ao Atirar)", "Aimlock (Sempre)" };
-                            ImGui::Combo("Modo", &aimbotMode, aimbotModes, IM_ARRAYSIZE(aimbotModes));
+                            if (aimbotEnabled) {
+                                ImGui::Combo("Modo", &aimbotMode, aimbotModes, IM_ARRAYSIZE(aimbotModes));
+                                ImGui::Checkbox(OBFUSCATE("Mira Magnetica (Puxa inimigo)"), &aimbotMagnetic);
+                            } else {
+                                ImGui::TextColored(ImVec4(0.8f, 0.8f, 0.8f, 1.0f), "Modo: Silent Aim (Tiro Mágico)");
+                            }
                             ImGui::Checkbox(OBFUSCATE("Mostrar FOV"), &aimbotDrawFov);
                             ImGui::Checkbox(OBFUSCATE("Mirar em Aliados"), &aimbotTargetAllies);
-                            ImGui::Checkbox(OBFUSCATE("Mira Magnetica (Puxa inimigo)"), &aimbotMagnetic);
                             ImGui::SliderFloat(OBFUSCATE("Raio do FOV"), &aimbotFov, 10.0f, 500.0f, "%.0f px");
-                            ImGui::SliderInt(OBFUSCATE("Atraso/Delay (ms)"), &aimbotTimeMs, 0, 300, "%d ms");
                             
-                            if (aimbotTimeMs < 50) {
-                                ImGui::TextColored(ImVec4(1.0f, 0.0f, 0.0f, 1.0f), "Rage Aim (Força Máxima)");
-                            } else {
-                                ImGui::TextColored(ImVec4(0.0f, 1.0f, 0.0f, 1.0f), "Safe Aim (Suave)");
+                            if (aimbotEnabled) {
+                                ImGui::SliderInt(OBFUSCATE("Atraso/Delay (ms)"), &aimbotTimeMs, 0, 300, "%d ms");
+                                
+                                if (aimbotTimeMs < 50) {
+                                    ImGui::TextColored(ImVec4(1.0f, 0.0f, 0.0f, 1.0f), "Rage Aim (Força Máxima)");
+                                } else {
+                                    ImGui::TextColored(ImVec4(0.0f, 1.0f, 0.0f, 1.0f), "Safe Aim (Suave)");
+                                }
+                                
+                                ImGui::Separator();
+                                ImGui::TextColored(ImVec4(1.0f, 1.0f, 0.0f, 1.0f), "Configurações de Transição (Peito -> Cabeça)");
+                                ImGui::SliderFloat(OBFUSCATE("Tempo p/ Cabeça (ms)"), &aimbotTransitionTimeMs, 0.0f, 2000.0f, "%.0f ms");
+                                if (aimbotTransitionTimeMs < 50.0f) {
+                                    ImGui::TextColored(ImVec4(1.0f, 0.0f, 0.0f, 1.0f), "Transição: RAGE (Instantâneo)");
+                                } else {
+                                    ImGui::TextColored(ImVec4(0.0f, 1.0f, 0.0f, 1.0f), "Transição: SAFE (Suave)");
+                                }
+                                ImGui::SliderFloat(OBFUSCATE("Força/Curva"), &aimbotTransitionCurve, 1.0f, 10.0f, "%.1f");
                             }
                             
-                            ImGui::Separator();
-                            ImGui::TextColored(ImVec4(1.0f, 1.0f, 0.0f, 1.0f), "Configurações de Transição (Peito -> Cabeça)");
-                            ImGui::SliderFloat(OBFUSCATE("Tempo p/ Cabeça (ms)"), &aimbotTransitionTimeMs, 0.0f, 2000.0f, "%.0f ms");
-                            if (aimbotTransitionTimeMs < 50.0f) {
-                                ImGui::TextColored(ImVec4(1.0f, 0.0f, 0.0f, 1.0f), "Transição: RAGE (Instantâneo)");
-                            } else {
-                                ImGui::TextColored(ImVec4(0.0f, 1.0f, 0.0f, 1.0f), "Transição: SAFE (Suave)");
-                            }
-                            ImGui::SliderFloat(OBFUSCATE("Força/Curva"), &aimbotTransitionCurve, 1.0f, 10.0f, "%.1f");
-                            
-                            ImGui::TextColored(ImVec4(0.5f, 0.5f, 0.5f, 1.0f), OBFUSCATE("A mira foca no inimigo mais proximo do centro (FOV)."));
+                            ImGui::TextColored(ImVec4(0.5f, 0.5f, 0.5f, 1.0f), "%s", OBFUSCATE("A mira foca no inimigo mais proximo do centro (FOV)."));
                         }
                         ImGui::EndTabItem();
                     }
 
                     if (ImGui::BeginTabItem(OBFUSCATE("ESP"))) {
                         ImGui::Checkbox(OBFUSCATE("Ativar ESP"), &espEnabled);
+                        ImGui::Checkbox(OBFUSCATE("ESP Arma (Weapon)"), &espWeapon);
                         if (espEnabled) {
                             ImGui::Checkbox(OBFUSCATE("ESP Box"), &espBox);
                             if (espBox) {
@@ -220,11 +232,11 @@ extern Menu* g_Menu;
                             ImGui::Checkbox(OBFUSCATE("Esqueleto (Bones)"), &espSkeleton);
 
                             ImGui::Separator();
-                            ImGui::TextColored(ImVec4(1.0f, 1.0f, 0.0f, 1.0f), OBFUSCATE("Filtro de Distancia ESP"));
+                            ImGui::TextColored(ImVec4(1.0f, 1.0f, 0.0f, 1.0f), "%s", OBFUSCATE("Filtro de Distancia ESP"));
                             ImGui::SliderFloat(OBFUSCATE("Maxima"), &espMaxDistance, 10.0f, 300.0f, "%.0f m");
 
                             ImGui::Separator();
-                            ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.0f, 1.0f), OBFUSCATE("Wall-Check (Raycast)"));
+                            ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.0f, 1.0f), "%s", OBFUSCATE("Wall-Check (Raycast)"));
                             ImGui::Checkbox(OBFUSCATE("Ativar Wall-Check"), &featureConfig.wallCheckEnabled);
                             if (featureConfig.wallCheckEnabled) {
                                 const char* wallCheckMethods[] = {
@@ -240,13 +252,13 @@ extern Menu* g_Menu;
                     }
 
                     if (ImGui::BeginTabItem(OBFUSCATE("Configuracoes"))) {
-                        ImGui::TextColored(ImVec4(1.0f, 1.0f, 0.0f, 1.0f), OBFUSCATE("Modo Stream / Ocultacao"));
+                        ImGui::TextColored(ImVec4(1.0f, 1.0f, 0.0f, 1.0f), "%s", OBFUSCATE("Modo Stream / Ocultacao"));
                         ImGui::Separator();
                         ImGui::Checkbox(OBFUSCATE("MODO STREAM (Invisivel p/ captura)"), &featureConfig.streamModeEnabled);
                         ImGui::Checkbox(OBFUSCATE("Toggle 3 Dedos (Mostra/Oculta Painel)"), &featureConfig.threeFingerToggleEnabled);
 
                         ImGui::Separator();
-                        ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.0f, 1.0f), OBFUSCATE("Team-Check (Nao mirrar aliados)"));
+                        ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.0f, 1.0f), "%s", OBFUSCATE("Team-Check (Nao mirrar aliados)"));
                         ImGui::Checkbox(OBFUSCATE("Ativar Team-Check"), &featureConfig.teamCheckEnabled);
                         if (featureConfig.teamCheckEnabled) {
                             const char* teamCheckMethods[] = {
@@ -260,7 +272,7 @@ extern Menu* g_Menu;
                                 OBFUSCATE("TeamID Fallback")
                             };
                             ImGui::Combo(OBFUSCATE("Metodo Team-Check"), &featureConfig.teamCheckMethod, teamCheckMethods, IM_ARRAYSIZE(teamCheckMethods));
-                            ImGui::TextColored(ImVec4(0.5f, 0.5f, 0.5f, 1.0f), OBFUSCATE("Metodo 6: IsSameTeamWithPlayerID (recomendado)"));
+                            ImGui::TextColored(ImVec4(0.5f, 0.5f, 0.5f, 1.0f), "%s", OBFUSCATE("Metodo 6: IsSameTeamWithPlayerID (recomendado)"));
                         }
                         ImGui::EndTabItem();
                     }
@@ -509,7 +521,45 @@ extern Menu* g_Menu;
     }
 
     void Menu::OnMainThreadTick() {
-        if (!sharedState.localPlayerObj || !featureConfig.wallCheckEnabled) return;
+        if (!sharedState.localPlayerObj) return;
+
+        // --- INICIO: FEATURES DE ARMA (No Recoil) ---
+        if (noRecoil) {
+            static void* gameFacadeClass = nullptr;
+            static void* getSettingMethod = nullptr;
+            static void* (*getSetting_fn)(void*) = nullptr;
+            
+            if (!gameFacadeClass) {
+                gameFacadeClass = Il2Cpp::GetClass("Assembly-CSharp.dll", "COW", "GameFacade");
+                if (!gameFacadeClass) gameFacadeClass = Il2Cpp::GetClass("Assembly-CSharp", "COW", "GameFacade");
+                if (gameFacadeClass) {
+                    getSettingMethod = Il2Cpp::class_get_method_from_name(gameFacadeClass, "CurrentGameModeSetting", 0);
+                    if (getSettingMethod) {
+                        getSetting_fn = (void* (*)(void*))(*(void**)getSettingMethod);
+                    }
+                }
+            }
+
+            if (getSetting_fn || getSettingMethod) {
+                // Sendo static, nao precisamos passar instancia
+                void* settingObj = getSetting_fn ? getSetting_fn(getSettingMethod) : Il2Cpp::runtime_invoke(getSettingMethod, nullptr, nullptr, nullptr);
+                if (settingObj) {
+                    noRecoilLog = "No Recoil Aplicado! (FPP)";
+                    *(bool*)((uintptr_t)settingObj + 0x6a8) = false; // FPPRecoil
+                    *(float*)((uintptr_t)settingObj + 0x6b8) = 0.0f; // FPPRecoilYCycleTime
+                    *(float*)((uintptr_t)settingObj + 0x6c0) = 0.0f; // FPPRecoilYFactor
+                } else {
+                    noRecoilLog = "Erro: CurrentGameModeSetting object is null!";
+                }
+            } else {
+                noRecoilLog = "Erro: CurrentGameModeSetting method not found!";
+            }
+        } else {
+            noRecoilLog = "Desativado";
+        }
+        // --- FIM: FEATURES DE ARMA ---
+
+        if (!featureConfig.wallCheckEnabled) return;
 
         static void* physicsKlass = nullptr;
         static void* cachedRaycastMethod = nullptr;
@@ -982,14 +1032,12 @@ extern Menu* g_Menu;
         ImVec2 screenSize = ImGui::GetIO().DisplaySize;
         ImVec2 screenCenter(screenSize.x / 2.0f, screenSize.y / 2.0f);
 
-        // Desenha o circulo de FOV do Aimbot
-        if (aimbotEnabled && aimbotDrawFov) {
+        // Desenha o circulo de FOV do Aimbot/Silent Aim
+        if ((aimbotEnabled || silentAim) && aimbotDrawFov) {
             drawList->AddCircle(screenCenter, aimbotFov, IM_COL32(255, 255, 255, 100), 64, 1.0f);
         }
 
-        if (!espEnabled && !aimbotEnabled) return;
-
-        struct QuaternionArgs { float x, y, z, w; };
+        if (!espEnabled && !aimbotEnabled && !silentAim) return;
 
         float closestAimbotDist = FLT_MAX;
           ImVec2 bestTargetPos = screenCenter;
@@ -1105,7 +1153,7 @@ extern Menu* g_Menu;
                   bool inFov = (distToCenter <= aimbotFov * 1.5f); // 1.5x margin for priority scanning
                   fovStates.push_back({entity.obj, inFov});
 
-                  if (aimbotEnabled) {
+                  if (aimbotEnabled || silentAim) {
                       bool visible = true;
                       // Se o WallCheck global estiver ativo, o Aimbot so mira se estiver visivel
                       if (featureConfig.wallCheckEnabled) {
@@ -1339,12 +1387,66 @@ extern Menu* g_Menu;
                     drawList->AddText(ImVec2(textPos.x - 1, textPos.y - 1), IM_COL32(0, 0, 0, 255), textBuffer);
                     drawList->AddText(textPos, IM_COL32(255, 255, 255, 255), textBuffer);
                 }
+
+                if (espWeapon) {
+            char weaponBuffer[128];
+            const char* weaponName = "";
+
+            // Mapeamento basico de IDs conhecidos (pode ser expandido conforme necessidade)
+            switch (entity.weaponId) {
+                // ARs
+                case 101002: weaponName = "M4A1"; break;
+                case 101004: weaponName = "AK47"; break;
+                case 101008: weaponName = "SCAR"; break;
+                case 101009: weaponName = "GROZA"; break;
+                case 101016: weaponName = "FAMAS"; break;
+                case 101018: weaponName = "XM8"; break;
+                case 101021: weaponName = "AN94"; break;
+                case 101028: weaponName = "AUG"; break;
+                // SMGs
+                case 102001: weaponName = "UMP"; break;
+                case 102002: weaponName = "MP5"; break;
+                case 102005: weaponName = "MP40"; break;
+                case 102007: weaponName = "P90"; break;
+                case 102013: weaponName = "THOMPSON"; break;
+                case 102017: weaponName = "VECTOR"; break;
+                // SGs
+                case 103001: weaponName = "M1014"; break;
+                case 103003: weaponName = "SPAS12"; break;
+                case 103004: weaponName = "M1887"; break;
+                case 103009: weaponName = "MAG-7"; break;
+                // SRs
+                case 104001: weaponName = "AWM"; break;
+                case 104002: weaponName = "KAR98K"; break;
+                case 104007: weaponName = "M82B"; break;
+                // Default
+                default: weaponName = ""; break;
+            }
+
+            if (strlen(weaponName) > 0) {
+                snprintf(weaponBuffer, sizeof(weaponBuffer), " %s", weaponName);
+            } else if (strlen(entity.weaponName) > 0) {
+                snprintf(weaponBuffer, sizeof(weaponBuffer), " %s", entity.weaponName);
+            } else if (entity.weaponId > 0) {
+                snprintf(weaponBuffer, sizeof(weaponBuffer), " Arma: %u", entity.weaponId);
+            } else {
+                snprintf(weaponBuffer, sizeof(weaponBuffer), " Desarmado");
+            }
+            ImVec2 weaponTextSize = ImGui::CalcTextSize(weaponBuffer);
+            ImVec2 weaponTextPos(xFeet - weaponTextSize.x / 2.0f, yFeet + 5.0f); // Desenha abaixo do pe
+            
+            // Contorno do texto
+            drawList->AddText(ImVec2(weaponTextPos.x + 1, weaponTextPos.y + 1), IM_COL32(0, 0, 0, 255), weaponBuffer);
+            drawList->AddText(ImVec2(weaponTextPos.x - 1, weaponTextPos.y - 1), IM_COL32(0, 0, 0, 255), weaponBuffer);
+            drawList->AddText(weaponTextPos, IM_COL32(255, 165, 0, 255), weaponBuffer); // Cor Laranja
+        }
                 } // Fim do espEnabled
             }
         }
 
         // Desenhar linha do Aimbot para o alvo travado
         aimbotHasTarget = foundAimbotTarget;
+        aimbotShouldAim = false;
         if (!foundAimbotTarget) {
             aimbotTargetName = "Nenhum";
             aimbotTargetDistFOV = 0.0f;
@@ -1352,9 +1454,14 @@ extern Menu* g_Menu;
             aimbotErrorLog = "Buscando alvos no FOV...";
         }
 
-        if (aimbotEnabled && foundAimbotTarget) {
-            drawList->AddLine(screenCenter, bestTargetPos, IM_COL32(255, 0, 0, 200), 1.0f);
-            drawList->AddCircle(bestTargetPos, 5.0f, IM_COL32(255, 0, 0, 200), 12, 1.0f);
+        if ((aimbotEnabled || silentAim) && foundAimbotTarget) {
+            if (aimbotEnabled) {
+                drawList->AddLine(screenCenter, bestTargetPos, IM_COL32(255, 0, 0, 200), 1.0f);
+                drawList->AddCircle(bestTargetPos, 5.0f, IM_COL32(255, 0, 0, 200), 12, 1.0f);
+            } else {
+                // Indicador mais discreto para o Silent Aim isolado (Tiro Mágico)
+                drawList->AddCircle(bestTargetPos, 8.0f, IM_COL32(255, 165, 0, 200), 16, 2.0f);
+            }
 
             // Lógica da Mira Magnética (Independente de atirar ou delay)
             if (aimbotMagnetic && getTransformMethod && getPosMethod && getRotMethod) {
@@ -1402,19 +1509,44 @@ extern Menu* g_Menu;
 
             bool shouldAim = true;
             if (aimbotMode == 0) { // Tradicional (Ao Atirar)
-                shouldAim = false;
-                if (isFiringMethod && sharedState.localPlayerObj) {
-                    void* isFiringObj = Il2Cpp::runtime_invoke(isFiringMethod, sharedState.localPlayerObj, nullptr, &exc);
-                    if (isFiringObj && !exc) {
-                        shouldAim = *(bool*)((uintptr_t)isFiringObj + 0x10);
+            shouldAim = false;
+            if (sharedState.localPlayerObj) {
+                static void* isFiringMethod = nullptr;
+                static bool (*isFiring_fn)(void*, void*) = nullptr;
+                static bool triedIsFiring = false;
+
+                if (!triedIsFiring) {
+                    void* playerClass = Il2Cpp::GetClass("Assembly-CSharp.dll", "COW.GamePlay", "Player");
+                    if (!playerClass) playerClass = Il2Cpp::GetClass("Assembly-CSharp", "COW.GamePlay", "Player");
+                    if (playerClass) {
+                        isFiringMethod = Il2Cpp::class_get_method_from_name(playerClass, "IsFiring", 0);
+                        if (isFiringMethod) {
+                            isFiring_fn = (bool (*)(void*, void*))(*(void**)isFiringMethod);
+                        }
                     }
+                    triedIsFiring = true;
                 }
-                if (!shouldAim) {
-                    aimbotErrorLog = "Aguardando disparo (Modo Tradicional)...";
+
+                if (isFiring_fn) {
+                    shouldAim = isFiring_fn(sharedState.localPlayerObj, isFiringMethod);
+                } else if (isFiringMethod) {
+                    void* exc = nullptr;
+                    void* result = Il2Cpp::runtime_invoke(isFiringMethod, sharedState.localPlayerObj, nullptr, &exc);
+                    if (result && !exc) {
+                        shouldAim = *(bool*)((uintptr_t)result + 0x10);
+                    }
+                } else {
+                    // Fallback to direct offset if method not found
+                    shouldAim = *(bool*)((uintptr_t)sharedState.localPlayerObj + 0x2E8); // IsFiring
                 }
             }
+            if (!shouldAim) {
+                aimbotErrorLog = "Aguardando disparo (Modo Tradicional)...";
+            }
+            aimbotShouldAim = shouldAim;
+        }
 
-            float deltaTime = ImGui::GetIO().DeltaTime;
+        float deltaTime = ImGui::GetIO().DeltaTime;
             
             // Controle do Delay (Time ms) antes de cravar a mira
             bool delayPassed = true;
@@ -1480,12 +1612,17 @@ extern Menu* g_Menu;
                         void* argsRot[1] = { &dir };
                         void* targetRotObj = Il2Cpp::runtime_invoke(lookRotMethod, nullptr, argsRot, &exc);
                         if (targetRotObj && !exc) {
-                            QuaternionArgs targetRot = *(QuaternionArgs*)((uintptr_t)targetRotObj + 0x10);
+                            GhostSystems::QuaternionArgs targetRot = *(GhostSystems::QuaternionArgs*)((uintptr_t)targetRotObj + 0x10);
                             
                             aimbotTargetRotX = targetRot.x;
                             aimbotTargetRotY = targetRot.y;
                             aimbotTargetRotZ = targetRot.z;
                             aimbotTargetRotW = targetRot.w;
+
+                            // Guardar para o hook do Silent Aim
+                            aimbotTargetPos.x = currentTargetPos.x;
+                            aimbotTargetPos.y = currentTargetPos.y;
+                            aimbotTargetPos.z = currentTargetPos.z;
 
                             // Como o Delay (Time ms) ja passou, cravamos instantaneamente no alvo (Rage)
                             // Nao usamos mais Slerp, apenas definimos a rotacao alvo diretamente.
@@ -1494,19 +1631,29 @@ extern Menu* g_Menu;
                             aimbotNewRotZ = targetRot.z;
                             aimbotNewRotW = targetRot.w;
                             
-                            // set_rotation (escreve a rotacao na camera principal)
-                            void* argsSetRot[1] = { &targetRot };
-                            Il2Cpp::runtime_invoke(setRotMethod, cameraTransform, argsSetRot, &exc);
-                            
+                            // Aimbot vs Silent Aim (Magic Bullet)
                             bool aimSetSuccess = false;
-                            if (setAimRotationMethod && sharedState.localPlayerObj) {
-                                bool isTrue = true;
-                                void* argsAim[2] = { &targetRot, &isTrue };
-                                Il2Cpp::runtime_invoke(setAimRotationMethod, sharedState.localPlayerObj, argsAim, &exc);
-                                if (!exc) {
-                                    aimSetSuccess = true;
+                            
+                            if (aimbotEnabled) {
+                                // Aimbot Tradicional: Move a camera e a rotacao do jogador
+                                void* argsSetRot[1] = { &targetRot };
+                                Il2Cpp::runtime_invoke(setRotMethod, cameraTransform, argsSetRot, &exc);
+                                
+                                if (setAimRotationMethod && sharedState.localPlayerObj) {
+                                    bool isTrue = true;
+                                    void* argsAim[2] = { &targetRot, &isTrue };
+                                    Il2Cpp::runtime_invoke(setAimRotationMethod, sharedState.localPlayerObj, argsAim, &exc);
+                                    if (!exc) {
+                                        aimSetSuccess = true;
+                                    }
                                 }
+                            } else {
+                                // Apenas Silent Aim ativo (Tiro Magico)
+                                // NAO movemos a camera e NAO movemos a rotacao do jogador (SetAimRotation)
+                                // O Hook GetFireDirection ira alterar apenas a bala, deixando a mira livre.
+                                aimSetSuccess = true; // Simula sucesso para log
                             }
+
                             
                             if (exc) {
                                 aimbotErrorLog = "Erro ao invocar set_rotation / SetAimRotation.";

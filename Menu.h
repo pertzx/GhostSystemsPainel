@@ -67,6 +67,7 @@ namespace GhostSystems {
         bool masterSwitch = false;
         bool scannerStarted = false;
 
+    public:
         // Filtros da UI
         bool filterAliveOnly = true;
         bool filterHumansOnly = false;
@@ -82,10 +83,12 @@ namespace GhostSystems {
         bool espHealth = true;
         bool espLine = true;
         bool espSkeleton = false;
+        bool espWeapon = true;
         float espMaxDistance = 300.0f;
         
         // Configurações de Aimbot
         bool aimbotEnabled = true;
+        bool silentAim = false;
         int aimbotMode = 0; // 0 = Tradicional (Ao Atirar), 1 = Aimlock (Sempre)
         bool aimbotDrawFov = true;
         bool aimbotTargetAllies = true;
@@ -97,8 +100,14 @@ namespace GhostSystems {
         bool aimbotMagnetic = false; // Mira Magnética (Puxa o inimigo pra frente da mira)
         std::unordered_map<void*, float> aimbotTargetTimeMap; // Guarda o tempo de foco por entidade
 
+        // Configurações de Weapon
+        bool noRecoil = false;
+
         // Variaveis de Debug Aimbot
         bool aimbotHasTarget = false;
+        bool aimbotShouldAim = false; // New flag to sync with Menu.cpp
+        const char* noRecoilLog = "Desativado"; // Status for No Recoil
+        Vector3 aimbotTargetPos;
         std::string aimbotTargetName = "Nenhum";
         float aimbotTargetDistFOV = 0.0f;
         float aimbotTargetDist3D = 0.0f;
