@@ -9,7 +9,6 @@
 #include <mutex>
 #include <regex>
 #include <cstdlib>
-#include <deque>
 
 extern GhostSystems::MemoryScanner* g_Scanner;
 
@@ -68,6 +67,11 @@ namespace GhostSystems {
         // Master Switch
         bool masterSwitch = false;
         bool scannerStarted = false;
+        
+        // Fake Lag System
+        bool fakeLagEnabled = false;
+        int fakeLagAmount = 50; // ms
+        bool fakeLagAdaptive = false; // Ajusta automaticamente baseado no ping
 
         // Filtros da UI
         bool filterAliveOnly = true;
@@ -277,47 +281,11 @@ namespace GhostSystems {
         static void setCurrentCapturedRequest(const HttpRequest& req);
         static thread_local HttpRequest t_CurrentCapturedRequest;
 
-        // ============ NOVOS RECURSOS ============
-
-        // ===== BYPASS MANAGER =====
+        // ===== NOVO: BYPASS MANAGER =====
         BypassManager bypassManager;
         bool bypassManagerInitialized = false;
-        void drawBypassManager();
         void initBypassManager();
-
-        // ===== DEBUG VISUAL =====
-        struct DebugLogEntry {
-            std::string message;
-            float timestamp;
-            int type; // 0=info, 1=warning, 2=error, 3=success
-        };
-        std::deque<DebugLogEntry> debugLogs;
-        static constexpr size_t MAX_DEBUG_LOGS = 100;
-        bool autoScrollDebug = true;
-        int debugFilterType = -1; // -1 = todos
-        void addDebugLog(const std::string& msg, int type = 0);
-        void drawDebugTab();
-        void drawDebugLogs();
-        void drawEntityDebugInfo();
-
-        // ===== ANIMAÇÕES UI =====
-        float animAlpha = 0.0f;
-        float animMenuScale = 0.8f;
-        bool uiAnimationComplete = false;
-        void updateUIAnimations();
-        void renderAnimatedBackground();
-
-        // ===== DETECÇÃO AUTOMÁTICA DE PARTIDA =====
-        bool matchDetectionEnabled = true;
-        bool isInMatch = false;
-        float matchDetectionTimer = 0.0f;
-        int lastEntityCount = 0;
-        void updateMatchDetection();
-        void drawMatchStatus();
-
-        // ===== STATUS INDICATORS =====
-        float statusPulse = 0.0f;
-        void updateStatusIndicators();
+        void drawBypassManager();
     };
 
 } // namespace GhostSystems

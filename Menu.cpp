@@ -16,12 +16,6 @@ namespace GhostSystems {
 extern Menu* g_Menu;
 
     void GhostSystems::Menu::initStyle() {
-        // Inicializar BypassManager
-        initBypassManager();
-        
-        // Adicionar log inicial
-        addDebugLog("GhostSystems iniciado", 3);
-        
         ImGuiStyle& style = ImGui::GetStyle();
         style.WindowRounding = 8.0f;
         style.FrameRounding = 6.0f;
@@ -141,12 +135,6 @@ extern Menu* g_Menu;
     void GhostSystems::Menu::render() {
         if (!isVisible) return;
 
-        // ===== ATUALIZAÇÕES DE SISTEMA =====
-        updateUIAnimations();
-        updateMatchDetection();
-        updateStatusIndicators();
-        renderAnimatedBackground();
-
         // O painel precisa ser arrastavel, entao removemos ImGuiWindowFlags_NoMove e ImGuiWindowFlags_NoTitleBar se houver.
         ImGuiWindowFlags windowFlags = ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoSavedSettings;
         
@@ -170,13 +158,6 @@ extern Menu* g_Menu;
             
             bool prevMasterSwitch = masterSwitch;
             ImGui::Checkbox(OBFUSCATE("Ativar Painel"), &masterSwitch);
-            
-            // Indicador de status da partida
-            ImGui::SameLine();
-            ImGui::Dummy(ImVec2(20, 0));
-            ImGui::SameLine();
-            drawMatchStatus();
-            
             if (masterSwitch && !prevMasterSwitch) {
                 if (!scannerStarted && ::g_Scanner) {
                     ::g_Scanner->start();
@@ -265,6 +246,17 @@ extern Menu* g_Menu;
                         ImGui::Checkbox(OBFUSCATE("Toggle 3 Dedos (Mostra/Oculta Painel)"), &featureConfig.threeFingerToggleEnabled);
 
                         ImGui::Separator();
+                        ImGui::TextColored(ImVec4(0.0f, 1.0f, 1.0f, 1.0f), "%s", OBFUSCATE("Network / Fake Lag"));
+                        ImGui::Checkbox(OBFUSCATE("Ativar Fake Lag"), &fakeLagEnabled);
+                        if (fakeLagEnabled) {
+                            ImGui::SliderInt(OBFUSCATE("Quantidade (ms)"), &fakeLagAmount, 10, 500, "%d ms");
+                            ImGui::Checkbox(OBFUSCATE("Lag Adaptativo"), &fakeLagAdaptive);
+                            if (fakeLagAdaptive) {
+                                ImGui::TextColored(ImVec4(0.7f, 0.7f, 0.7f, 1.0f), "%s", OBFUSCATE("Ajusta automaticamente baseado no ping"));
+                            }
+                        }
+
+                        ImGui::Separator();
                         ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.0f, 1.0f), "%s", OBFUSCATE("Team-Check (Nao mirrar aliados)"));
                         ImGui::Checkbox(OBFUSCATE("Ativar Team-Check"), &featureConfig.teamCheckEnabled);
                         if (featureConfig.teamCheckEnabled) {
@@ -340,20 +332,9 @@ extern Menu* g_Menu;
                         }
                     } // fim isDebugMode
 
-                    // NOVA ABA: Debug Visual (sempre visível)
-                    if (ImGui::BeginTabItem("Debug Visual")) {
-                        drawDebugTab();
-                        ImGui::EndTabItem();
-                    }
-
-                    // NOVA ABA: Anti-Ban Manager
+                    // NOVA ABA: Anti-Ban Manager (substitui Bypass antigo)
                     if (ImGui::BeginTabItem("Anti-Ban")) {
                         drawBypassManager();
-                        ImGui::EndTabItem();
-                    }
-
-                    if (ImGui::BeginTabItem(OBFUSCATE("Bypass"))) {
-                        drawBypass();
                         ImGui::EndTabItem();
                     }
                 } // fecha BeginTabBar
@@ -363,6 +344,99 @@ extern Menu* g_Menu;
         ImGui::End();
 
         ImGui::PopStyleVar();
+    }
+
+    // ============ NOVAS FUNCOES PREMIUM ============
+    
+    void GhostSystems::Menu::initBypassManager() {
+        if (!bypassManagerInitialized) {
+            bypassManager.Initialize();
+            bypassManagerInitialized = true;
+            LOGI("[Menu] BypassManager inicializado");
+        }
+    }
+
+    void GhostSystems::Menu::drawBypassManager() {
+        if (!bypassManagerInitialized) {
+            initBypassManager();
+        }
+
+        ImGui::TextColored(ImVec4(0.0f, 1.0f, 1.0f, 1.0f), "Sistema de Protecao Anti-Ban");
+        ImGui::TextColored(ImVec4(0.7f, 0.7f, 0.7f, 1.0f), "40 tecnicas de bypass implementadas");
+        ImGui::Separator();
+
+        bool allProtected = bypassManager.IsFullyProtected();
+        size_t applied = bypassManager.GetAppliedCount();
+        size_t total = bypassManager.GetTotalCount();
+
+        if (allProtected) {
+            ImGui::TextColored(ImVec4(0.0f, 1.0f, 0.0f, 1.0f), "✓ PROTECAO TOTAL ATIVA");
+        } else {
+            ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.0f, 1.0f), "⚠ PROTECAO PARCIAL (%zu/%zu)", applied, total);
+        }
+
+        ImGui::Separator();
+
+        if (ImGui::Button("Aplicar Todas as Tecnicas", ImVec2(200, 35))) {
+            bypassManager.ApplyAll();
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Reverter Todas", ImVec2(150, 35))) {
+            bypassManager.RevertAll();
+        }
+
+        ImGui::Separator();
+        ImGui::Text("Tecnicas de Protecao:");
+        
+        auto& entries = bypassManager.GetEntries();
+        
+        if (ImGui::BeginTable("BypassTable", 3, ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg)) {
+            ImGui::TableSetupColumn("Tecnica", ImGuiTableColumnFlags_WidthStretch);
+            ImGui::TableSetupColumn("Status", ImGuiTableColumnFlags_WidthFixed, 100);
+            ImGui::TableSetupColumn("Acao", ImGuiTableColumnFlags_WidthFixed, 80);
+            ImGui::TableHeadersRow();
+
+            for (auto& entry : entries) {
+                ImGui::TableNextRow();
+                
+                ImGui::TableSetColumnIndex(0);
+                ImGui::Text("[%s] %s", entry.id.c_str(), entry.name.c_str());
+                if (ImGui::IsItemHovered()) {
+                    ImGui::SetTooltip("%s", entry.description.c_str());
+                }
+
+                ImGui::TableSetColumnIndex(1);
+                switch (entry.status) {
+                    case BypassStatus::APPLIED:
+                        ImGui::TextColored(ImVec4(0.0f, 1.0f, 0.0f, 1.0f), "✓ Ativo");
+                        break;
+                    case BypassStatus::APPLYING:
+                        ImGui::TextColored(ImVec4(1.0f, 1.0f, 0.0f, 1.0f), "⏳ Aplicando...");
+                        break;
+                    case BypassStatus::FAILED:
+                        ImGui::TextColored(ImVec4(1.0f, 0.0f, 0.0f, 1.0f), "✗ Falhou");
+                        break;
+                    default:
+                        ImGui::TextColored(ImVec4(0.5f, 0.5f, 0.5f, 1.0f), "○ Inativo");
+                }
+
+                ImGui::TableSetColumnIndex(2);
+                if (!entry.isApplied) {
+                    if (ImGui::Button((std::string("Aplicar##") + entry.id).c_str())) {
+                        entry.applyFunc();
+                    }
+                } else {
+                    if (ImGui::Button((std::string("Reverter##") + entry.id).c_str())) {
+                        entry.revertFunc();
+                    }
+                }
+            }
+            ImGui::EndTable();
+        }
+
+        ImGui::Separator();
+        ImGui::TextColored(ImVec4(0.7f, 0.7f, 0.7f, 1.0f), 
+            "Nota: Estas tecnicas sao PASSIVAS e nao injetam codigo no anticheat.");
     }
 
     void GhostSystems::Menu::scanForPotentialValues(void* obj, void* klass, const std::string& path, int depth, std::unordered_set<void*>& visited) {
@@ -3023,352 +3097,6 @@ extern Menu* g_Menu;
         } else {
             ImGui::TextColored(ImVec4(1.0f, 0.0f, 0.0f, 1.0f), "Player Data NAO encontrado");
         }
-    }
-
-    // ============ NOVOS RECURSOS - IMPLEMENTAÇÕES ============
-
-    // ===== BYPASS MANAGER =====
-    void Menu::initBypassManager() {
-        if (!bypassManagerInitialized) {
-            bypassManager.Initialize();
-            bypassManagerInitialized = true;
-            LOGI("[Menu] BypassManager inicializado");
-        }
-    }
-
-    void Menu::drawBypassManager() {
-        if (!bypassManagerInitialized) {
-            initBypassManager();
-        }
-
-        ImGui::TextColored(ImVec4(1.0f, 1.0f, 0.0f, 1.0f), "Sistema de Protecao Anti-Ban");
-        ImGui::Separator();
-
-        // Status geral
-        bool allProtected = bypassManager.IsFullyProtected();
-        if (allProtected) {
-            ImGui::TextColored(ImVec4(0.0f, 1.0f, 0.0f, 1.0f), "✓ Protecao Total Ativa");
-        } else {
-            size_t applied = bypassManager.GetAppliedCount();
-            size_t total = bypassManager.GetEntries().size();
-            ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.0f, 1.0f), "⚠ Protecao Parcial (%zu/%zu)", applied, total);
-        }
-
-        ImGui::Separator();
-
-        // Botões de controle
-        if (ImGui::Button("Aplicar Todas as Tecnicas", ImVec2(200, 35))) {
-            bypassManager.ApplyAll();
-        }
-        ImGui::SameLine();
-        if (ImGui::Button("Reverter Todas", ImVec2(150, 35))) {
-            bypassManager.RevertAll();
-        }
-
-        ImGui::Separator();
-
-        // Lista de técnicas
-        ImGui::Text("Tecnicas de Protecao:");
-        auto& entries = bypassManager.GetEntries();
-        
-        if (ImGui::BeginTable("BypassTable", 3, ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg)) {
-            ImGui::TableSetupColumn("Tecnica", ImGuiTableColumnFlags_WidthStretch);
-            ImGui::TableSetupColumn("Status", ImGuiTableColumnFlags_WidthFixed, 100);
-            ImGui::TableSetupColumn("Acao", ImGuiTableColumnFlags_WidthFixed, 80);
-            ImGui::TableHeadersRow();
-
-            for (auto& entry : entries) {
-                ImGui::TableNextRow();
-                
-                // Nome
-                ImGui::TableSetColumnIndex(0);
-                ImGui::Text("%s", entry.name.c_str());
-                if (ImGui::IsItemHovered()) {
-                    ImGui::SetTooltip("%s", entry.description.c_str());
-                }
-
-                // Status
-                ImGui::TableSetColumnIndex(1);
-                switch (entry.status) {
-                    case BypassStatus::APPLIED:
-                        ImGui::TextColored(ImVec4(0.0f, 1.0f, 0.0f, 1.0f), "✓ Ativo");
-                        break;
-                    case BypassStatus::APPLYING:
-                        ImGui::TextColored(ImVec4(1.0f, 1.0f, 0.0f, 1.0f), "⏳ Aplicando...");
-                        break;
-                    case BypassStatus::FAILED:
-                        ImGui::TextColored(ImVec4(1.0f, 0.0f, 0.0f, 1.0f), "✗ Falhou");
-                        break;
-                    default:
-                        ImGui::TextColored(ImVec4(0.5f, 0.5f, 0.5f, 1.0f), "○ Inativo");
-                }
-
-                // Ação
-                ImGui::TableSetColumnIndex(2);
-                if (!entry.isApplied) {
-                    if (ImGui::Button((std::string("Aplicar##") + entry.name).c_str())) {
-                        entry.applyFunc();
-                    }
-                } else {
-                    if (ImGui::Button((std::string("Reverter##") + entry.name).c_str())) {
-                        entry.revertFunc();
-                    }
-                }
-            }
-            ImGui::EndTable();
-        }
-
-        ImGui::Separator();
-        ImGui::TextColored(ImVec4(0.7f, 0.7f, 0.7f, 1.0f), 
-            "Nota: Estas tecnicas sao PASSIVAS e nao injetam codigo no anticheat.");
-    }
-
-    // ===== DEBUG VISUAL =====
-    void Menu::addDebugLog(const std::string& msg, int type) {
-        DebugLogEntry entry;
-        entry.message = msg;
-        entry.timestamp = ImGui::GetTime();
-        entry.type = type;
-        
-        debugLogs.push_back(entry);
-        
-        // Limitar tamanho
-        while (debugLogs.size() > MAX_DEBUG_LOGS) {
-            debugLogs.pop_front();
-        }
-    }
-
-    void Menu::drawDebugTab() {
-        ImGui::TextColored(ImVec4(0.0f, 1.0f, 1.0f, 1.0f), "Debug Visual - Status do Sistema");
-        ImGui::Separator();
-
-        // Status do scanner
-        ImGui::Text("Status do Scanner:");
-        if (::g_Scanner && ::g_Scanner->isScanning()) {
-            ImGui::TextColored(ImVec4(0.0f, 1.0f, 0.0f, 1.0f), "✓ Ativo");
-            ImGui::SameLine();
-            ImGui::Text("- Entidades: %zu", ::g_Scanner->getEntityCount());
-        } else {
-            ImGui::TextColored(ImVec4(1.0f, 0.0f, 0.0f, 1.0f), "✗ Inativo");
-        }
-
-        // Status do bypass
-        ImGui::Text("Status do Bypass:");
-        if (bypassManagerInitialized && bypassManager.IsFullyProtected()) {
-            ImGui::TextColored(ImVec4(0.0f, 1.0f, 0.0f, 1.0f), "✓ Totalmente Protegido");
-        } else {
-            ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.0f, 1.0f), "⚠ Parcial");
-        }
-
-        // Detecção de partida
-        ImGui::Text("Deteccao de Partida:");
-        if (isInMatch) {
-            ImGui::TextColored(ImVec4(0.0f, 1.0f, 0.0f, 1.0f), "✓ Em Partida");
-        } else {
-            ImGui::TextColored(ImVec4(0.5f, 0.5f, 0.5f, 1.0f), "○ Fora de Partida");
-        }
-
-        ImGui::Separator();
-
-        // Controles de log
-        ImGui::Checkbox("Auto-scroll", &autoScrollDebug);
-        ImGui::SameLine();
-        const char* filters[] = {"Todos", "Info", "Warning", "Error", "Success"};
-        ImGui::Combo("Filtro", &debugFilterType, filters, IM_ARRAYSIZE(filters));
-        
-        if (ImGui::Button("Limpar Logs")) {
-            debugLogs.clear();
-        }
-
-        ImGui::Separator();
-
-        // Área de logs
-        ImGui::BeginChild("DebugLogs", ImVec2(0, 200), true);
-        for (const auto& log : debugLogs) {
-            // Aplicar filtro
-            if (debugFilterType > 0 && log.type != (debugFilterType - 1)) {
-                continue;
-            }
-
-            ImVec4 color;
-            const char* prefix;
-            switch (log.type) {
-                case 0: color = ImVec4(1.0f, 1.0f, 1.0f, 1.0f); prefix = "[INFO]"; break;
-                case 1: color = ImVec4(1.0f, 1.0f, 0.0f, 1.0f); prefix = "[WARN]"; break;
-                case 2: color = ImVec4(1.0f, 0.0f, 0.0f, 1.0f); prefix = "[ERROR]"; break;
-                case 3: color = ImVec4(0.0f, 1.0f, 0.0f, 1.0f); prefix = "[OK]"; break;
-                default: color = ImVec4(1.0f, 1.0f, 1.0f, 1.0f); prefix = "[?]";
-            }
-            
-            ImGui::TextColored(color, "%s %.2f: %s", prefix, log.timestamp, log.message.c_str());
-        }
-        
-        if (autoScrollDebug && ImGui::GetScrollY() >= ImGui::GetScrollMaxY()) {
-            ImGui::SetScrollHereY(1.0f);
-        }
-        ImGui::EndChild();
-
-        // Informações das entidades
-        ImGui::Separator();
-        drawEntityDebugInfo();
-    }
-
-    void Menu::drawEntityDebugInfo() {
-        if (!::g_Scanner) return;
-
-        ImGui::Text("Informacoes das Entidades:");
-        
-        size_t count = ::g_Scanner->getEntityCount();
-        ImGui::Text("Total: %zu entidades", count);
-
-        if (count > 0) {
-            auto entities = ::g_Scanner->getEntities();
-            
-            if (ImGui::BeginTable("EntityDebugTable", 5, ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg | ImGuiTableFlags_ScrollY, ImVec2(0, 150))) {
-                ImGui::TableSetupColumn("Nome", ImGuiTableColumnFlags_WidthFixed, 100);
-                ImGui::TableSetupColumn("Time", ImGuiTableColumnFlags_WidthFixed, 50);
-                ImGui::TableSetupColumn("Vida", ImGuiTableColumnFlags_WidthFixed, 60);
-                ImGui::TableSetupColumn("Distancia", ImGuiTableColumnFlags_WidthFixed, 70);
-                ImGui::TableSetupColumn("Tipo", ImGuiTableColumnFlags_WidthFixed, 60);
-                ImGui::TableHeadersRow();
-
-                int maxShow = std::min((int)entities.size(), 20);
-                for (int i = 0; i < maxShow; i++) {
-                    const auto& ent = entities[i];
-                    ImGui::TableNextRow();
-                    
-                    ImGui::TableSetColumnIndex(0);
-                    ImGui::Text("%s", ent.name);
-                    
-                    ImGui::TableSetColumnIndex(1);
-                    ImGui::Text("%d", ent.teamId);
-                    
-                    ImGui::TableSetColumnIndex(2);
-                    ImGui::Text("%.0f/%.0f", ent.health, ent.maxHealth);
-                    
-                    ImGui::TableSetColumnIndex(3);
-                    ImGui::Text("%.1fm", ent.distanceToLocal);
-                    
-                    ImGui::TableSetColumnIndex(4);
-                    if (ent.isBot) {
-                        ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.0f, 1.0f), "BOT");
-                    } else if (ent.alignment == Alignment::ALLY) {
-                        ImGui::TextColored(ImVec4(0.0f, 1.0f, 0.0f, 1.0f), "ALIADO");
-                    } else {
-                        ImGui::TextColored(ImVec4(1.0f, 0.0f, 0.0f, 1.0f), "INIMIGO");
-                    }
-                }
-                ImGui::EndTable();
-            }
-        }
-    }
-
-    // ===== ANIMAÇÕES UI =====
-    void Menu::updateUIAnimations() {
-        float dt = ImGui::GetIO().DeltaTime;
-        
-        // Animação de fade in
-        if (isVisible && animAlpha < 1.0f) {
-            animAlpha += dt * 5.0f;
-            if (animAlpha > 1.0f) animAlpha = 1.0f;
-        } else if (!isVisible && animAlpha > 0.0f) {
-            animAlpha -= dt * 5.0f;
-            if (animAlpha < 0.0f) animAlpha = 0.0f;
-        }
-
-        // Animação de escala
-        if (isVisible && animMenuScale < 1.0f) {
-            animMenuScale += dt * 4.0f;
-            if (animMenuScale > 1.0f) animMenuScale = 1.0f;
-        } else if (!isVisible && animMenuScale > 0.8f) {
-            animMenuScale -= dt * 4.0f;
-            if (animMenuScale < 0.8f) animMenuScale = 0.8f;
-        }
-
-        uiAnimationComplete = (animAlpha >= 1.0f && animMenuScale >= 1.0f);
-    }
-
-    void Menu::renderAnimatedBackground() {
-        ImDrawList* drawList = ImGui::GetBackgroundDrawList();
-        ImVec2 displaySize = ImGui::GetIO().DisplaySize;
-        
-        // Gradiente sutil no fundo quando menu está aberto
-        if (animAlpha > 0.01f) {
-            ImU32 col1 = IM_COL32(10, 10, 15, (int)(30 * animAlpha));
-            ImU32 col2 = IM_COL32(20, 20, 30, (int)(20 * animAlpha));
-            drawList->AddRectFilledMultiColor(
-                ImVec2(0, 0), displaySize,
-                col1, col2, col2, col1
-            );
-        }
-    }
-
-    // ===== DETECÇÃO AUTOMÁTICA DE PARTIDA =====
-    void Menu::updateMatchDetection() {
-        if (!matchDetectionEnabled || !::g_Scanner) return;
-
-        float dt = ImGui::GetIO().DeltaTime;
-        matchDetectionTimer += dt;
-
-        // Verificar a cada 2 segundos
-        if (matchDetectionTimer >= 2.0f) {
-            matchDetectionTimer = 0.0f;
-            
-            size_t currentCount = ::g_Scanner->getEntityCount();
-            
-            // Detectar mudança no número de entidades
-            if (currentCount > 0 && !isInMatch) {
-                isInMatch = true;
-                addDebugLog("Partida detectada! Entidades: " + std::to_string(currentCount), 3);
-                
-                // Auto-aplicar bypass se necessário
-                if (bypassManagerInitialized && !bypassManager.IsFullyProtected()) {
-                    bypassManager.ApplyAll();
-                }
-            } else if (currentCount == 0 && isInMatch) {
-                // Verificar se realmente saiu da partida (pode ser só um frame sem entidades)
-                lastEntityCount = 0;
-            } else if (currentCount == 0 && lastEntityCount == 0 && isInMatch) {
-                // Confirmar saída da partida
-                isInMatch = false;
-                addDebugLog("Partida encerrada", 0);
-            }
-            
-            lastEntityCount = (int)currentCount;
-        }
-    }
-
-    void Menu::drawMatchStatus() {
-        ImVec4 color;
-        const char* text;
-        
-        if (isInMatch) {
-            color = ImVec4(0.0f, 1.0f, 0.0f, 1.0f);
-            text = "EM PARTIDA";
-        } else {
-            color = ImVec4(0.5f, 0.5f, 0.5f, 1.0f);
-            text = "AGUARDANDO PARTIDA";
-        }
-        
-        // Pulsar o indicador
-        float pulse = (sinf(ImGui::GetTime() * 3.0f) + 1.0f) * 0.5f;
-        ImVec4 pulseColor = ImVec4(
-            color.x * (0.7f + 0.3f * pulse),
-            color.y * (0.7f + 0.3f * pulse),
-            color.z * (0.7f + 0.3f * pulse),
-            1.0f
-        );
-        
-        ImGui::TextColored(pulseColor, "● %s", text);
-        if (::g_Scanner) {
-            ImGui::SameLine();
-            ImGui::Text("- %zu jogadores", ::g_Scanner->getEntityCount());
-        }
-    }
-
-    // ===== STATUS INDICATORS =====
-    void Menu::updateStatusIndicators() {
-        statusPulse = (sinf(ImGui::GetTime() * 2.0f) + 1.0f) * 0.5f;
     }
 
 } // namespace GhostSystems
