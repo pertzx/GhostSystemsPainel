@@ -6,9 +6,6 @@
 #include <cmath>
 
 namespace GhostSystems {
-    struct QuaternionArgs {
-        float x, y, z, w;
-    };
 
     struct Vector3 {
         float x, y, z;
@@ -35,10 +32,8 @@ namespace GhostSystems {
         Vector3 position;
         bool isBot;
         bool isKnocked;
-    int teamId;
-    char weaponName[64];
-    int weaponId;
-    float distanceToLocal;
+        int teamId;
+        float distanceToLocal;
         Alignment alignment;
         void* obj; // Ponteiro Il2Cpp do jogador
         bool isVisible = true; // Added visibility flag

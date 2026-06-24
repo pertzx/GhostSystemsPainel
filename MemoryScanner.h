@@ -38,6 +38,39 @@ namespace GhostSystems {
             if (logger.is_open()) logger.close();
         }
 
+        // ===== NOVOS MÉTODOS PÚBLICOS =====
+        bool isScanning() const { return isRunning; }
+        
+        size_t getEntityCount() {
+            std::lock_guard<std::mutex> lock(sharedState.mtx);
+            return sharedState.entities.size();
+        }
+        
+        std::vector<PlayerEntity> getEntities() {
+            std::lock_guard<std::mutex> lock(sharedState.mtx);
+            return sharedState.entities;
+        }
+        
+        bool hasLocalPlayer() {
+            std::lock_guard<std::mutex> lock(sharedState.mtx);
+            return sharedState.localPlayerObj != nullptr;
+        }
+        
+        Vector3 getLocalPosition() {
+            std::lock_guard<std::mutex> lock(sharedState.mtx);
+            return sharedState.localPlayerPos;
+        }
+        
+        int getLocalTeamId() {
+            std::lock_guard<std::mutex> lock(sharedState.mtx);
+            return sharedState.localPlayerTeamId;
+        }
+        
+        void* getLocalPlayerObj() {
+            std::lock_guard<std::mutex> lock(sharedState.mtx);
+            return sharedState.localPlayerObj;
+        }
+
     private:
         GameState& sharedState;
         FeatureConfig& featureConfig;
@@ -404,7 +437,7 @@ namespace GhostSystems {
                                     void* entityKlass = Il2Cpp::object_get_class(entityObj);
                                     if (!entityKlass) continue;
                                     
-                                    // const char* className = Il2Cpp::class_get_name(entityKlass);
+                                    const char* className = Il2Cpp::class_get_name(entityKlass);
 
                                     if (Il2Cpp::IsSubclassOf(entityKlass, "Player")) {
                                         PlayerEntity p;
@@ -417,8 +450,6 @@ namespace GhostSystems {
                                         p.isBot = false;
                                         p.isKnocked = false;
                                         p.teamId = 1;
-                                        p.weaponId = 0;
-                                        memset(p.weaponName, 0, sizeof(p.weaponName));
                                         p.distanceToLocal = 100.0f;
                                         p.alignment = Alignment::ENEMY;
 
@@ -628,65 +659,6 @@ namespace GhostSystems {
                                                         p.health = (float)hpVal;
                                                         hpFound = true;
                                                     }
-                                                }
-                                            }
-                                        }
-
-                                        // Ler Arma Atual (GetWeaponOnHand / ActiveUISightingWeapon)
-                                        static void* getWeaponOnHandMethod = nullptr;
-                                        static void* (*getWeaponOnHand_fn)(void*, void*) = nullptr;
-                                        static bool triedWeaponMethod = false;
-                                        if (!triedWeaponMethod && !getWeaponOnHandMethod) {
-                                            void* playerClass = Il2Cpp::GetClass("Assembly-CSharp.dll", "COW.GamePlay", "Player");
-                                            if (!playerClass) playerClass = Il2Cpp::GetClass("Assembly-CSharp", "COW.GamePlay", "Player");
-                                            if (playerClass) {
-                                                getWeaponOnHandMethod = Il2Cpp::class_get_method_from_name(playerClass, "GetWeaponOnHand", 0);
-                                                if (getWeaponOnHandMethod) {
-                                                    // Em il2cpp, MethodInfo struct tem methodPointer no offset 0x0
-                                                    getWeaponOnHand_fn = (void* (*)(void*, void*))(*(void**)getWeaponOnHandMethod);
-                                                }
-                                            }
-                                            triedWeaponMethod = true;
-                                        }
-
-                                        void* weaponObj = nullptr;
-                                        if (getWeaponOnHand_fn) {
-                                            weaponObj = getWeaponOnHand_fn(entityObj, getWeaponOnHandMethod);
-                                        } else if (getWeaponOnHandMethod) {
-                                            void* excWep = nullptr;
-                                            weaponObj = Il2Cpp::runtime_invoke(getWeaponOnHandMethod, entityObj, nullptr, &excWep);
-                                        }
-                                        
-                                        if (!weaponObj) {
-                                            // Fallback: Offset 0x5a0 para Player.ActiveUISightingWeapon (dump.cs)
-                                            weaponObj = *(void**)((uintptr_t)entityObj + 0x5a0);
-                                        }
-
-                                        if (weaponObj) {
-                                            // Em ARM64, os dois primeiros ponteiros de um objeto gerenciado sao Klass (0x0) e Monitor (0x8)
-                                            // Em KOGBJLFDJHC (classe base da arma):
-                                            // public UInt32 JDPDFBINIJE; // 0x10 (WeaponID)
-                                            // protected String HCIHACHPOLO; // 0x18 (WeaponName)
-                                            
-                                            uint32_t weaponId = *(uint32_t*)((uintptr_t)weaponObj + 0x10);
-                                            if (weaponId > 0 && weaponId < 1000000) {
-                                                p.weaponId = weaponId;
-                                            }
-
-                                            void* weaponNameObj = *(void**)((uintptr_t)weaponObj + 0x18);
-                                            if (weaponNameObj) {
-                                                int32_t length = *(int32_t*)((uintptr_t)weaponNameObj + 0x10);
-                                                if (length > 0 && length < 64) {
-                                                    uint16_t* chars = (uint16_t*)((uintptr_t)weaponNameObj + 0x14);
-                                                    char utf8Name[64] = {0};
-                                                    int outIdx = 0;
-                                                    for (int j = 0; j < length && outIdx < 62; ++j) {
-                                                        uint16_t c = chars[j];
-                                                        if (c < 0x80) utf8Name[outIdx++] = (char)c;
-                                                        else utf8Name[outIdx++] = '?';
-                                                    }
-                                                    utf8Name[outIdx] = '\0';
-                                                    strncpy(p.weaponName, utf8Name, sizeof(p.weaponName) - 1);
                                                 }
                                             }
                                         }
