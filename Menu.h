@@ -3,6 +3,7 @@
 #include "Entity.h"
 #include "MemoryScanner.h"
 #include "BypassManager.h"
+#include <imgui.h>
 #include <unordered_map>
 #include <unordered_set>
 #include <string>
@@ -59,6 +60,11 @@ namespace GhostSystems {
         GameState& sharedState;
         FeatureConfig& featureConfig;
         bool isVisible = true;
+        bool panelMinimized = false;
+        ImVec2 iconPosition = ImVec2(20, 20);
+        ImVec2 panelPosition = ImVec2(0, 0);
+        ImVec2 panelSize = ImVec2(600, 450);
+        bool draggingIcon = false;
         void* selectedEntityObj = nullptr;
         
         // Flag de produção vs desenvolvimento

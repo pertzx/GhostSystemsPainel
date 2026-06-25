@@ -135,27 +135,113 @@ extern Menu* g_Menu;
     void GhostSystems::Menu::render() {
         if (!isVisible) return;
 
-        // O painel precisa ser arrastavel, entao removemos ImGuiWindowFlags_NoMove e ImGuiWindowFlags_NoTitleBar se houver.
-        ImGuiWindowFlags windowFlags = ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoSavedSettings;
-        
-        // Adicionamos estilizacao
-        ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 10.0f);
+        ImGuiIO& io = ImGui::GetIO();
+        ImDrawList* drawList = ImGui::GetForegroundDrawList();
 
-        ImGui::SetNextWindowSize(ImVec2(600, 450), ImGuiCond_FirstUseEver);
-        ImGui::SetNextWindowPos(ImVec2(ImGui::GetIO().DisplaySize.x * 0.5f, ImGui::GetIO().DisplaySize.y * 0.5f), ImGuiCond_FirstUseEver, ImVec2(0.5f, 0.5f));
+        // ---- ICONE FLUTUANTE ----
+        const float iconRadius = 28.0f;
+        const float iconMargin = 16.0f;
 
-        // Renderiza ESP sempre que o menu renderiza
+        ImVec2 iconCenter(iconPosition.x + iconRadius, iconPosition.y + iconRadius);
+
+        // Desenha o circulo de fundo (logo do cheat)
+        drawList->AddCircleFilled(iconCenter, iconRadius, IM_COL32(20, 20, 30, 220));
+        drawList->AddCircle(iconCenter, iconRadius, IM_COL32(60, 180, 255, 255), 64, 2.5f);
+        drawList->AddCircle(iconCenter, iconRadius - 2.0f, IM_COL32(30, 120, 255, 150), 64, 1.5f);
+
+        // Texto "GS" no centro do icone
+        const char* logoText = "GS";
+        ImVec2 textSize = ImGui::CalcTextSize(logoText);
+        drawList->AddText(ImVec2(iconCenter.x - textSize.x / 2.0f, iconCenter.y - textSize.y / 2.0f),
+                          IM_COL32(255, 255, 255, 255), logoText);
+
+        // Clique no icone toggle show/hide do painel
+        ImVec2 iconMin(iconPosition.x, iconPosition.y);
+        ImVec2 iconMax(iconPosition.x + iconRadius * 2, iconPosition.y + iconRadius * 2);
+        bool iconHovered = io.MousePos.x >= iconMin.x && io.MousePos.x <= iconMax.x && 
+                           io.MousePos.y >= iconMin.y && io.MousePos.y <= iconMax.y;
+        if (iconHovered && ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
+            panelMinimized = !panelMinimized;
+        }
+
+        // Arrastar o icone (so quando o painel esta minimizado)
+        if (panelMinimized) {
+            if (iconHovered && ImGui::IsMouseDragging(ImGuiMouseButton_Left)) {
+                ImVec2 delta = io.MouseDelta;
+                iconPosition.x += delta.x;
+                iconPosition.y += delta.y;
+
+                // Clamp para nao sair da tela
+                if (iconPosition.x < 0) iconPosition.x = 0;
+                if (iconPosition.y < 0) iconPosition.y = 0;
+                if (iconPosition.x > io.DisplaySize.x - iconRadius * 2) iconPosition.x = io.DisplaySize.x - iconRadius * 2;
+                if (iconPosition.y > io.DisplaySize.y - iconRadius * 2) iconPosition.y = io.DisplaySize.y - iconRadius * 2;
+            }
+
+            // Tooltip no icone
+            if (iconHovered) {
+                ImVec2 tooltipPos(iconCenter.x, iconPosition.y + iconRadius * 2 + 6);
+                const char* tip = panelMinimized ? "Clique para abrir" : "Clique para minimizar";
+                ImVec2 tipSize = ImGui::CalcTextSize(tip);
+                drawList->AddRectFilled(ImVec2(tooltipPos.x - tipSize.x / 2.0f - 6, tooltipPos.y),
+                                        ImVec2(tooltipPos.x + tipSize.x / 2.0f + 6, tooltipPos.y + tipSize.y + 4),
+                                        IM_COL32(0, 0, 0, 200));
+                drawList->AddText(ImVec2(tooltipPos.x - tipSize.x / 2.0f, tooltipPos.y + 2),
+                                  IM_COL32(255, 255, 255, 220), tip);
+            }
+        }
+
+        // Renderiza ESP sempre
         drawESP();
 
-        if (ImGui::Begin(OBFUSCATE("GhostSystems V1.0"), &isVisible, windowFlags)) {
-            
-            // Logica customizada para permitir arrastar tocando no fundo da janela (Mobile amigavel)
+        // Se o painel estiver minimizado, para aqui
+        if (panelMinimized) return;
+
+        // ---- PAINEL PRINCIPAL ----
+        ImGuiWindowFlags windowFlags = ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoTitleBar;
+
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 10.0f);
+
+        ImVec2 displaySize = io.DisplaySize;
+
+        // Se for primeira vez, centraliza
+        if (panelSize.x < 50) {
+            panelSize = ImVec2(600, 450);
+            panelPosition = ImVec2(displaySize.x * 0.5f - panelSize.x * 0.5f,
+                                   displaySize.y * 0.5f - panelSize.y * 0.5f);
+        }
+
+        ImGui::SetNextWindowSize(panelSize, ImGuiCond_Always);
+        ImGui::SetNextWindowPos(panelPosition, ImGuiCond_Always);
+
+        if (ImGui::Begin(OBFUSCATE("##GhostPanel"), nullptr, windowFlags)) {
+            panelPosition = ImGui::GetWindowPos();
+            panelSize = ImGui::GetWindowSize();
+
+            // Atualiza posicao do icone (top/left do painel)
+            iconPosition = ImVec2(panelPosition.x + iconMargin, panelPosition.y + iconMargin);
+
+            // Arrastar tocando no fundo da janela (Mobile amigavel)
             if (ImGui::IsWindowHovered(ImGuiHoveredFlags_RootAndChildWindows) && !ImGui::IsAnyItemActive() && ImGui::IsMouseDragging(ImGuiMouseButton_Left)) {
-                ImVec2 delta = ImGui::GetIO().MouseDelta;
-                ImVec2 pos = ImGui::GetWindowPos();
-                ImGui::SetWindowPos(ImVec2(pos.x + delta.x, pos.y + delta.y));
+                ImVec2 delta = io.MouseDelta;
+                ImGui::SetWindowPos(ImVec2(panelPosition.x + delta.x, panelPosition.y + delta.y));
             }
-            
+
+            // Barra de titulo customizada
+            ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.18f, 0.18f, 0.22f, 1.0f));
+            ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.25f, 0.25f, 0.30f, 1.0f));
+            ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.30f, 0.30f, 0.35f, 1.0f));
+
+            ImGui::TextColored(ImVec4(0.0f, 0.7f, 1.0f, 1.0f), "%s", OBFUSCATE("GHOSTSYSTEMS V1.0"));
+            ImGui::SameLine();
+            ImGui::SetCursorPosX(ImGui::GetCursorPosX() + ImGui::GetContentRegionAvail().x - 28);
+            if (ImGui::Button(OBFUSCATE("_"), ImVec2(24, 24))) {
+                panelMinimized = true;
+            }
+
+            ImGui::PopStyleColor(3);
+            ImGui::Separator();
+
             bool prevMasterSwitch = masterSwitch;
             ImGui::Checkbox(OBFUSCATE("Ativar Painel"), &masterSwitch);
             if (masterSwitch && !prevMasterSwitch) {
@@ -170,7 +256,7 @@ extern Menu* g_Menu;
                 }
             }
             ImGui::Separator();
-            
+
             if (masterSwitch) {
                 if (ImGui::BeginTabBar("MenuTabs")) {
                     if (ImGui::BeginTabItem(OBFUSCATE("Aimbot"))) {
@@ -183,13 +269,13 @@ extern Menu* g_Menu;
                             ImGui::Checkbox(OBFUSCATE("Mira Magnetica (Puxa inimigo)"), &aimbotMagnetic);
                             ImGui::SliderFloat(OBFUSCATE("Raio do FOV"), &aimbotFov, 10.0f, 500.0f, "%.0f px");
                             ImGui::SliderInt(OBFUSCATE("Atraso/Delay (ms)"), &aimbotTimeMs, 0, 300, "%d ms");
-                            
+
                             if (aimbotTimeMs < 50) {
                                 ImGui::TextColored(ImVec4(1.0f, 0.0f, 0.0f, 1.0f), "Rage Aim (Força Máxima)");
                             } else {
                                 ImGui::TextColored(ImVec4(0.0f, 1.0f, 0.0f, 1.0f), "Safe Aim (Suave)");
                             }
-                            
+
                             ImGui::Separator();
                             ImGui::TextColored(ImVec4(1.0f, 1.0f, 0.0f, 1.0f), "Configurações de Transição (Peito -> Cabeça)");
                             ImGui::SliderFloat(OBFUSCATE("Tempo p/ Cabeça (ms)"), &aimbotTransitionTimeMs, 0.0f, 2000.0f, "%.0f ms");
@@ -199,7 +285,7 @@ extern Menu* g_Menu;
                                 ImGui::TextColored(ImVec4(0.0f, 1.0f, 0.0f, 1.0f), "Transição: SAFE (Suave)");
                             }
                             ImGui::SliderFloat(OBFUSCATE("Força/Curva"), &aimbotTransitionCurve, 1.0f, 10.0f, "%.1f");
-                            
+
                             ImGui::TextColored(ImVec4(0.5f, 0.5f, 0.5f, 1.0f), "%s", OBFUSCATE("A mira foca no inimigo mais proximo do centro (FOV)."));
                         }
                         ImGui::EndTabItem();
@@ -330,16 +416,15 @@ extern Menu* g_Menu;
 
                             ImGui::EndTabItem();
                         }
-                    } // fim isDebugMode
+                    }
 
-                    // NOVA ABA: Anti-Ban Manager (substitui Bypass antigo)
                     if (ImGui::BeginTabItem("Anti-Ban")) {
                         drawBypassManager();
                         ImGui::EndTabItem();
                     }
-                } // fecha BeginTabBar
+                }
                 ImGui::EndTabBar();
-            } // fecha if (masterSwitch)
+            }
         }
         ImGui::End();
 
