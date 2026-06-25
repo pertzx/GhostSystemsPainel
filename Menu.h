@@ -290,8 +290,9 @@ namespace GhostSystems {
         // ===== NOVO: BYPASS MANAGER =====
         BypassManager bypassManager;
         bool bypassManagerInitialized = false;
-        void initBypassManager();
-        void drawBypassManager();
+    void initBypassManager();
+    void activateAllBypass();
+    void drawBypassManager();
     };
 
 } // namespace GhostSystems

@@ -204,12 +204,10 @@ extern Menu* g_Menu;
 
         ImVec2 displaySize = io.DisplaySize;
 
-        // Se for primeira vez, centraliza
-        if (panelSize.x < 50) {
-            panelSize = ImVec2(600, 450);
-            panelPosition = ImVec2(displaySize.x * 0.5f - panelSize.x * 0.5f,
-                                   displaySize.y * 0.5f - panelSize.y * 0.5f);
-        }
+        // Centraliza sempre
+        panelSize = ImVec2(600, 450);
+        panelPosition = ImVec2(displaySize.x * 0.5f - panelSize.x * 0.5f,
+                               displaySize.y * 0.5f - panelSize.y * 0.5f);
 
         ImGui::SetNextWindowSize(panelSize, ImGuiCond_Always);
         ImGui::SetNextWindowPos(panelPosition, ImGuiCond_Always);
@@ -418,7 +416,7 @@ extern Menu* g_Menu;
                         }
                     }
 
-                    if (ImGui::BeginTabItem("Anti-Ban")) {
+                    if (ImGui::BeginTabItem("Bypass")) {
                         drawBypassManager();
                         ImGui::EndTabItem();
                     }
@@ -438,6 +436,14 @@ extern Menu* g_Menu;
             bypassManager.Initialize();
             bypassManagerInitialized = true;
             LOGI("[Menu] BypassManager inicializado");
+            activateAllBypass();
+        }
+    }
+
+    void GhostSystems::Menu::activateAllBypass() {
+        if (bypassManagerInitialized) {
+            bypassManager.ApplyAll();
+            LOGI("[Menu] Todas as tecnicas de bypass ativadas automaticamente");
         }
     }
 
