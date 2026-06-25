@@ -67,6 +67,21 @@ namespace GhostSystems {
         bool draggingIcon = false;
         void* selectedEntityObj = nullptr;
         
+        // ===== CACHE DE OFFSETS (PERFORMANCE) =====
+        std::unordered_map<std::string, size_t> cachedFieldOffsets;
+        std::unordered_map<std::string, void*> cachedMethods;
+        std::unordered_map<std::string, void*> cachedClasses;
+        
+        void clearCache() {
+            cachedFieldOffsets.clear();
+            cachedMethods.clear();
+            cachedClasses.clear();
+        }
+        
+        size_t getCachedFieldOffset(void* obj, const char* fieldName);
+        void* getCachedMethod(const char* className, const char* methodName, int paramCount = 0);
+        void* getCachedClass(const char* assemblyName, const char* namespaceName, const char* className);
+        
         // Flag de produção vs desenvolvimento
         bool isDebugMode = false; // Mude para false para esconder as abas de debug
 

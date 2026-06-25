@@ -3190,4 +3190,57 @@ extern Menu* g_Menu;
         }
     }
 
+    // ===== IMPLEMENTACAO CACHE DE OFFSETS =====
+    size_t GhostSystems::Menu::getCachedFieldOffset(void* obj, const char* fieldName) {
+        std::string key = std::string("field_") + fieldName;
+        auto it = cachedFieldOffsets.find(key);
+        if (it != cachedFieldOffsets.end()) {
+            return it->second;
+        }
+        
+        void* klass = Il2Cpp::object_get_class(obj);
+        if (klass && Il2Cpp::class_get_field_from_name) {
+            void* field = Il2Cpp::class_get_field_from_name(klass, fieldName);
+            if (field && Il2Cpp::field_get_offset) {
+                size_t offset = Il2Cpp::field_get_offset(field);
+                cachedFieldOffsets[key] = offset;
+                return offset;
+            }
+        }
+        return 0;
+    }
+    
+    void* GhostSystems::Menu::getCachedMethod(const char* className, const char* methodName, int paramCount) {
+        std::string key = std::string("method_") + className + "_" + methodName + "_" + std::to_string(paramCount);
+        auto it = cachedMethods.find(key);
+        if (it != cachedMethods.end()) {
+            return it->second;
+        }
+        
+        void* klass = Il2Cpp::GetClass("Assembly-CSharp.dll", "", className);
+        if (klass) {
+            void* method = Il2Cpp::GetMethodRecursively(klass, methodName, paramCount);
+            if (method) {
+                cachedMethods[key] = method;
+                return method;
+            }
+        }
+        return nullptr;
+    }
+    
+    void* GhostSystems::Menu::getCachedClass(const char* assemblyName, const char* namespaceName, const char* className) {
+        std::string key = std::string("class_") + assemblyName + "_" + namespaceName + "_" + className;
+        auto it = cachedClasses.find(key);
+        if (it != cachedClasses.end()) {
+            return it->second;
+        }
+        
+        void* klass = Il2Cpp::GetClass(assemblyName, namespaceName, className);
+        if (klass) {
+            cachedClasses[key] = klass;
+            return klass;
+        }
+        return nullptr;
+    }
+
 } // namespace GhostSystems
