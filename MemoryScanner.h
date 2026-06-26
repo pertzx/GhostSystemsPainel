@@ -80,7 +80,19 @@ namespace GhostSystems {
 
         Alignment calculateAlignment(PlayerEntity& entity, int localTeamId, void* localObj) {
             if (!featureConfig.teamCheckEnabled) {
+                // Se desabilitado, usar comparacao direta de TeamID
                 return entity.teamId == localTeamId ? Alignment::ALLY : Alignment::ENEMY;
+            }
+            
+            // NOVO: Tentar usar GameFacade.IsSameTeam primeiro (mais confiavel)
+            if (localObj && entity.obj) {
+                if (checkSameTeam(localObj, entity.obj)) {
+                    if (logger.is_open()) logger << "[TEAM] ALIADO (GameFacade.IsSameTeam)" << std::endl;
+                    return Alignment::ALLY;
+                } else {
+                    if (logger.is_open()) logger << "[TEAM] INIMIGO (GameFacade.IsSameTeam)" << std::endl;
+                    return Alignment::ENEMY;
+                }
             }
 
             switch (featureConfig.teamCheckMethod) {
@@ -183,7 +195,7 @@ namespace GhostSystems {
                     return entity.teamId == localTeamId ? Alignment::ALLY : Alignment::ENEMY;
                 }
                 case 6: {
-                    if (logger.is_open()) logger << "[TEAM] Method 6: IsSameTeamWithPlayerID (AttackableEntity)" << std::endl;
+                    if (logger.is_open()) logger << "[TEAM] Method 6: IsSameTeamWithPlayerID (AttackableEntity) - NOVO TIPO BHGGAEEHJCO" << std::endl;
                     if (!localObj || !entity.obj) {
                         if (logger.is_open()) logger << "[TEAM] localObj or entity.obj null, fallback to teamId" << std::endl;
                         return entity.teamId == localTeamId ? Alignment::ALLY : Alignment::ENEMY;
@@ -198,24 +210,36 @@ namespace GhostSystems {
                         if (logger.is_open()) logger << "[TEAM] IsSameTeamWithPlayerID method not found, fallback to teamId" << std::endl;
                         return entity.teamId == localTeamId ? Alignment::ALLY : Alignment::ENEMY;
                     }
-                    uint64_t localPlayerId = *(uint64_t*)((uintptr_t)localObj + 0x3B0);
-                    uint64_t entityPlayerId = *(uint64_t*)((uintptr_t)entity.obj + 0x3B0);
+                    
+                    // NOVO: Tentar ler PlayerID do offset (novo tipo BHGGAEEHJCO)
+                    // Offset comum para PlayerID: 0x3B0, 0x3A0, 0x3C0
+                    uint64_t localPlayerId = 0;
+                    uint64_t entityPlayerId = 0;
+                    
+                    int possibleIdOffsets[] = {0x3B0, 0x3A0, 0x3C0, 0x3D0, 0x400, 0x420};
+                    for (int idOffset : possibleIdOffsets) {
+                        uint64_t possibleLocalId = *(uint64_t*)((uintptr_t)localObj + idOffset);
+                        uint64_t possibleEntityId = *(uint64_t*)((uintptr_t)entity.obj + idOffset);
+                        
+                        // Validar se parece um ID valido (nao zero, nao -1)
+                        if (possibleLocalId != 0 && possibleLocalId != 0xFFFFFFFFFFFFFFFF &&
+                            possibleEntityId != 0 && possibleEntityId != 0xFFFFFFFFFFFFFFFF) {
+                            localPlayerId = possibleLocalId;
+                            entityPlayerId = possibleEntityId;
+                            if (logger.is_open()) logger << "[TEAM] PlayerID encontrado no offset " << idOffset << std::endl;
+                            break;
+                        }
+                    }
+                    
                     if (localPlayerId == 0 || entityPlayerId == 0) {
-                        if (logger.is_open()) logger << "[TEAM] Player ID is null, fallback to teamId" << std::endl;
+                        if (logger.is_open()) logger << "[TEAM] Player ID nao encontrado nos offsets, fallback to teamId" << std::endl;
                         return entity.teamId == localTeamId ? Alignment::ALLY : Alignment::ENEMY;
                     }
-                    struct IHAAMHPPLMG {
-                        uint32_t NBPDJAAAFBH;
-                        uint32_t JEDDPHIHGKL;
-                        uint8_t IOICFFEKAIL;
-                    };
-                    IHAAMHPPLMG playerIdStruct = {0};
-                    uint32_t lowPart = (uint32_t)(entityPlayerId & 0xFFFFFFFF);
-                    uint32_t highPart = (uint32_t)((entityPlayerId >> 32) & 0xFFFFFFFF);
-                    playerIdStruct.NBPDJAAAFBH = lowPart;
-                    playerIdStruct.JEDDPHIHGKL = highPart;
-                    playerIdStruct.IOICFFEKAIL = 0;
-                    void* args[1] = { &playerIdStruct };
+                    
+                    // NOVO: Usar struct BHGGAEEHJCO (8 bytes diretos, sem campos separados)
+                    BHGGAEEHJCO entityPlayerIdStruct(entityPlayerId);
+                    
+                    void* args[1] = { &entityPlayerIdStruct };
                     void* result = Il2Cpp::runtime_invoke(isSameTeamMethod, localObj, args, nullptr);
                     if (result) {
                         bool isSameTeam = *(bool*)((uintptr_t)result + 0x10);
@@ -226,14 +250,563 @@ namespace GhostSystems {
                     return entity.teamId == localTeamId ? Alignment::ALLY : Alignment::ENEMY;
                 }
                 case 7: {
-                    if (logger.is_open()) logger << "[TEAM] Method 7: Fallback teamId compare (local=" << localTeamId << ")" << std::endl;
+                    if (logger.is_open()) logger << "[TEAM] Method 7: GameFacade.IsSameTeam(Player, Player)" << std::endl;
+                    if (!localObj || !entity.obj) {
+                        return entity.teamId == localTeamId ? Alignment::ALLY : Alignment::ENEMY;
+                    }
+                    
+                    void* gameFacadeClass = Il2Cpp::GetClass("Assembly-CSharp.dll", "COW", "GameFacade");
+                    if (!gameFacadeClass) {
+                        return entity.teamId == localTeamId ? Alignment::ALLY : Alignment::ENEMY;
+                    }
+                    
+                    void* isSameTeamMethod = Il2Cpp::class_get_method_from_name(gameFacadeClass, "IsSameTeam", 2);
+                    if (!isSameTeamMethod) {
+                        return entity.teamId == localTeamId ? Alignment::ALLY : Alignment::ENEMY;
+                    }
+                    
+                    void* args[2] = { localObj, entity.obj };
+                    void* result = Il2Cpp::runtime_invoke(isSameTeamMethod, nullptr, args, nullptr);
+                    if (result) {
+                        bool isSameTeam = *(bool*)((uintptr_t)result + 0x10);
+                        if (logger.is_open()) logger << "[TEAM] GameFacade.IsSameTeam(Player, Player): " << (isSameTeam ? "ally" : "enemy") << std::endl;
+                        return isSameTeam ? Alignment::ALLY : Alignment::ENEMY;
+                    }
                     return entity.teamId == localTeamId ? Alignment::ALLY : Alignment::ENEMY;
+                }
+                case 8: {
+                    if (logger.is_open()) logger << "[TEAM] Method 8: GameFacade.IsSameTeam(BHGGAEEHJCO, BHGGAEEHJCO)" << std::endl;
+                    if (!localObj || !entity.obj) {
+                        return entity.teamId == localTeamId ? Alignment::ALLY : Alignment::ENEMY;
+                    }
+                    
+                    void* gameFacadeClass = Il2Cpp::GetClass("Assembly-CSharp.dll", "COW", "GameFacade");
+                    if (!gameFacadeClass) {
+                        return entity.teamId == localTeamId ? Alignment::ALLY : Alignment::ENEMY;
+                    }
+                    
+                    // Obter CurrentLocalPlayerID
+                    void* currentLocalIdMethod = Il2Cpp::class_get_method_from_name(gameFacadeClass, "CurrentLocalPlayerID", 0);
+                    if (!currentLocalIdMethod) {
+                        return entity.teamId == localTeamId ? Alignment::ALLY : Alignment::ENEMY;
+                    }
+                    
+                    void* localIdResult = Il2Cpp::runtime_invoke(currentLocalIdMethod, nullptr, nullptr, nullptr);
+                    if (!localIdResult) {
+                        return entity.teamId == localTeamId ? Alignment::ALLY : Alignment::ENEMY;
+                    }
+                    
+                    BHGGAEEHJCO localId = *(BHGGAEEHJCO*)((uintptr_t)localIdResult + 0x10);
+                    
+                    // Tentar obter PlayerID da entidade
+                    void* entityKlass = Il2Cpp::object_get_class(entity.obj);
+                    void* getPlayerIdMethod = Il2Cpp::GetMethodRecursively(entityKlass, "get_PlayerID", 0);
+                    if (!getPlayerIdMethod) getPlayerIdMethod = Il2Cpp::GetMethodRecursively(entityKlass, "GetPlayerID", 0);
+                    
+                    BHGGAEEHJCO entityId;
+                    if (getPlayerIdMethod) {
+                        void* entityIdResult = Il2Cpp::runtime_invoke(getPlayerIdMethod, entity.obj, nullptr, nullptr);
+                        if (entityIdResult) {
+                            entityId = *(BHGGAEEHJCO*)((uintptr_t)entityIdResult + 0x10);
+                        } else {
+                            // Fallback: tentar ler do offset
+                            entityId = BHGGAEEHJCO(*(uint64_t*)((uintptr_t)entity.obj + 0x3B0));
+                        }
+                    } else {
+                        // Fallback: tentar ler do offset
+                        entityId = BHGGAEEHJCO(*(uint64_t*)((uintptr_t)entity.obj + 0x3B0));
+                    }
+                    
+                    void* isSameTeamMethod = Il2Cpp::class_get_method_from_name(gameFacadeClass, "IsSameTeam", 2);
+                    if (!isSameTeamMethod) {
+                        return entity.teamId == localTeamId ? Alignment::ALLY : Alignment::ENEMY;
+                    }
+                    
+                    void* args[2] = { &localId, &entityId };
+                    void* result = Il2Cpp::runtime_invoke(isSameTeamMethod, nullptr, args, nullptr);
+                    if (result) {
+                        bool isSameTeam = *(bool*)((uintptr_t)result + 0x10);
+                        if (logger.is_open()) logger << "[TEAM] GameFacade.IsSameTeam(ID, ID): " << (isSameTeam ? "ally" : "enemy") << std::endl;
+                        return isSameTeam ? Alignment::ALLY : Alignment::ENEMY;
+                    }
+                    return entity.teamId == localTeamId ? Alignment::ALLY : Alignment::ENEMY;
+                }
+                case 9: {
+                    if (logger.is_open()) logger << "[TEAM] Method 9: Comparacao direta de PlayerID (BHGGAEEHJCO)" << std::endl;
+                    if (!localObj || !entity.obj) {
+                        return entity.teamId == localTeamId ? Alignment::ALLY : Alignment::ENEMY;
+                    }
+                    
+                    // Tentar ler PlayerID do jogador local de varios offsets
+                    uint64_t localPlayerId = 0;
+                    uint64_t entityPlayerId = 0;
+                    
+                    int idOffsets[] = {0x3B0, 0x3A0, 0x3C0, 0x3D0, 0x3E0, 0x400, 0x420, 0x3B8, 0x430};
+                    
+                    for (int off : idOffsets) {
+                        uint64_t possibleLocalId = *(uint64_t*)((uintptr_t)localObj + off);
+                        if (possibleLocalId != 0 && possibleLocalId != 0xFFFFFFFFFFFFFFFF) {
+                            localPlayerId = possibleLocalId;
+                            break;
+                        }
+                    }
+                    
+                    for (int off : idOffsets) {
+                        uint64_t possibleEntityId = *(uint64_t*)((uintptr_t)entity.obj + off);
+                        if (possibleEntityId != 0 && possibleEntityId != 0xFFFFFFFFFFFFFFFF) {
+                            entityPlayerId = possibleEntityId;
+                            break;
+                        }
+                    }
+                    
+                    if (localPlayerId == 0 || entityPlayerId == 0) {
+                        if (logger.is_open()) logger << "[TEAM] PlayerID nao encontrado, usando fallback" << std::endl;
+                        return entity.teamId == localTeamId ? Alignment::ALLY : Alignment::ENEMY;
+                    }
+                    
+                    // Comparar os IDs - se forem iguais, é o mesmo jogador (nao deve acontecer)
+                    // Se forem diferentes, precisamos de outra logica
+                    // Vamos verificar se os IDs tem algum padrao em comum
+                    
+                    // Extrair partes altas e baixas
+                    uint32_t localHigh = (uint32_t)(localPlayerId >> 32);
+                    uint32_t localLow = (uint32_t)(localPlayerId & 0xFFFFFFFF);
+                    uint32_t entityHigh = (uint32_t)(entityPlayerId >> 32);
+                    uint32_t entityLow = (uint32_t)(entityPlayerId & 0xFFFFFFFF);
+                    
+                    if (logger.is_open()) {
+                        logger << "[TEAM] LocalID: " << localPlayerId << " (High: " << localHigh << ", Low: " << localLow << ")" << std::endl;
+                        logger << "[TEAM] EntityID: " << entityPlayerId << " (High: " << entityHigh << ", Low: " << entityLow << ")" << std::endl;
+                    }
+                    
+                    // Se os High bits forem iguais, provavelmente sao do mesmo time/grupo
+                    if (localHigh == entityHigh && localHigh != 0) {
+                        if (logger.is_open()) logger << "[TEAM] Mesmo High bits - ALIADO" << std::endl;
+                        return Alignment::ALLY;
+                    }
+                    
+                    return Alignment::ENEMY;
+                }
+                case 10: {
+                    if (logger.is_open()) logger << "[TEAM] Method 10: GameFacade.CheckSameTeam" << std::endl;
+                    if (!localObj || !entity.obj) {
+                        return entity.teamId == localTeamId ? Alignment::ALLY : Alignment::ENEMY;
+                    }
+                    
+                    void* gameFacadeClass = Il2Cpp::GetClass("Assembly-CSharp.dll", "COW", "GameFacade");
+                    if (!gameFacadeClass) {
+                        return entity.teamId == localTeamId ? Alignment::ALLY : Alignment::ENEMY;
+                    }
+                    
+                    void* checkSameTeamMethod = Il2Cpp::class_get_method_from_name(gameFacadeClass, "CheckSameTeam", 2);
+                    if (!checkSameTeamMethod) {
+                        return entity.teamId == localTeamId ? Alignment::ALLY : Alignment::ENEMY;
+                    }
+                    
+                    void* args[2] = { localObj, entity.obj };
+                    void* result = Il2Cpp::runtime_invoke(checkSameTeamMethod, nullptr, args, nullptr);
+                    if (result) {
+                        bool isSameTeam = *(bool*)((uintptr_t)result + 0x10);
+                        if (logger.is_open()) logger << "[TEAM] CheckSameTeam: " << (isSameTeam ? "ally" : "enemy") << std::endl;
+                        return isSameTeam ? Alignment::ALLY : Alignment::ENEMY;
+                    }
+                    return entity.teamId == localTeamId ? Alignment::ALLY : Alignment::ENEMY;
+                }
+                case 11: {
+                    if (logger.is_open()) logger << "[TEAM] Method 11: GameFacade.GetRelationWithTrackedPlayer" << std::endl;
+                    
+                    void* gameFacadeClass = Il2Cpp::GetClass("Assembly-CSharp.dll", "COW", "GameFacade");
+                    if (!gameFacadeClass) {
+                        return entity.teamId == localTeamId ? Alignment::ALLY : Alignment::ENEMY;
+                    }
+                    
+                    // Obter CurrentLocalPlayerID
+                    void* currentLocalIdMethod = Il2Cpp::class_get_method_from_name(gameFacadeClass, "CurrentLocalPlayerID", 0);
+                    if (!currentLocalIdMethod) {
+                        return entity.teamId == localTeamId ? Alignment::ALLY : Alignment::ENEMY;
+                    }
+                    
+                    void* localIdResult = Il2Cpp::runtime_invoke(currentLocalIdMethod, nullptr, nullptr, nullptr);
+                    if (!localIdResult) {
+                        return entity.teamId == localTeamId ? Alignment::ALLY : Alignment::ENEMY;
+                    }
+                    
+                    BHGGAEEHJCO localId = *(BHGGAEEHJCO*)((uintptr_t)localIdResult + 0x10);
+                    
+                    void* getRelationMethod = Il2Cpp::class_get_method_from_name(gameFacadeClass, "GetRelationWithTrackedPlayer", 1);
+                    if (!getRelationMethod) {
+                        getRelationMethod = Il2Cpp::class_get_method_from_name(gameFacadeClass, "GetRelationWithTrackedPlayer", 2);
+                    }
+                    
+                    if (getRelationMethod) {
+                        void* args[2] = { &localId, &localId }; // Compara com si mesmo para obter relacao
+                        void* result = Il2Cpp::runtime_invoke(getRelationMethod, nullptr, args, nullptr);
+                        if (result) {
+                            int relation = *(int*)((uintptr_t)result + 0x10);
+                            // EFactionRelationType: Ally = 0, Enemy = 1, Neutral = 2
+                            if (logger.is_open()) logger << "[TEAM] Relation: " << relation << std::endl;
+                            if (relation == 0) return Alignment::ALLY;
+                            if (relation == 1) return Alignment::ENEMY;
+                            return Alignment::NEUTRAL;
+                        }
+                    }
+                    return entity.teamId == localTeamId ? Alignment::ALLY : Alignment::ENEMY;
+                }
+                case 12: {
+                    if (logger.is_open()) logger << "[TEAM] Method 12: Scan de campo 'm_TeamID' ou similar" << std::endl;
+                    if (!localObj || !entity.obj) {
+                        return entity.teamId == localTeamId ? Alignment::ALLY : Alignment::ENEMY;
+                    }
+                    
+                    // Tentar encontrar campos que contenham "Team" no nome
+                    void* localKlass = Il2Cpp::object_get_class(localObj);
+                    void* entityKlass = Il2Cpp::object_get_class(entity.obj);
+                    
+                    if (localKlass && entityKlass) {
+                        void* iter = nullptr;
+                        void* field = nullptr;
+                        while ((field = Il2Cpp::class_get_fields(localKlass, &iter)) != nullptr) {
+                            const char* fieldName = Il2Cpp::field_get_name(field);
+                            if (fieldName && (strstr(fieldName, "Team") || strstr(fieldName, "team") || strstr(fieldName, "m_Team"))) {
+                                size_t offset = Il2Cpp::field_get_offset(field);
+                                int localTeamVal = *(int*)((uintptr_t)localObj + offset);
+                                int entityTeamVal = *(int*)((uintptr_t)entity.obj + offset);
+                                
+                                if (logger.is_open()) {
+                                    logger << "[TEAM] Campo encontrado: " << fieldName << " offset: " << offset << std::endl;
+                                    logger << "[TEAM] Local: " << localTeamVal << " Entity: " << entityTeamVal << std::endl;
+                                }
+                                
+                                if (localTeamVal == entityTeamVal && localTeamVal >= 0) {
+                                    if (logger.is_open()) logger << "[TEAM] Mesmo valor - ALIADO" << std::endl;
+                                    return Alignment::ALLY;
+                                }
+                            }
+                        }
+                    }
+                    
+                    return Alignment::ENEMY;
+                }
+                case 13: {
+                    if (logger.is_open()) logger << "[TEAM] Method 13: TeamColorStr comparison (offset 0x7a0)" << std::endl;
+                    if (!localObj || !entity.obj) {
+                        return entity.teamId == localTeamId ? Alignment::ALLY : Alignment::ENEMY;
+                    }
+                    
+                    // TeamColorStr esta no offset 0x7a0 na classe Player
+                    // E um ponteiro para String (Il2CppString*)
+                    void** localColorStrPtr = (void**)((uintptr_t)localObj + 0x7a0);
+                    void** entityColorStrPtr = (void**)((uintptr_t)entity.obj + 0x7a0);
+                    
+                    if (localColorStrPtr && entityColorStrPtr) {
+                        void* localStr = *localColorStrPtr;
+                        void* entityStr = *entityColorStrPtr;
+                        
+                        if (localStr && entityStr) {
+                            // Comparar ponteiros primeiro (mais rapido)
+                            if (localStr == entityStr) {
+                                if (logger.is_open()) logger << "[TEAM] Mesmo ponteiro TeamColorStr - ALIADO" << std::endl;
+                                return Alignment::ALLY;
+                            }
+                            
+                            // Comparar conteudo das strings lendo diretamente da memoria
+                            // Il2CppString layout: header(0x10) + length(4) + chars(2*length)
+                            int32_t localLen = *(int32_t*)((uintptr_t)localStr + 0x10);
+                            int32_t entityLen = *(int32_t*)((uintptr_t)entityStr + 0x10);
+                            
+                            if (logger.is_open()) {
+                                logger << "[TEAM] Local TeamColorStr len: " << localLen << std::endl;
+                                logger << "[TEAM] Entity TeamColorStr len: " << entityLen << std::endl;
+                            }
+                            
+                            // Se tiverem mesmo tamanho e nao forem vazias, comparar
+                            if (localLen == entityLen && localLen > 0 && localLen < 100) {
+                                void* localChars = (void*)((uintptr_t)localStr + 0x14);
+                                void* entityChars = (void*)((uintptr_t)entityStr + 0x14);
+                                // Strings iguais provavelmente sao do mesmo time
+                                if (memcmp(localChars, entityChars, localLen * 2) == 0) {
+                                    if (logger.is_open()) logger << "[TEAM] Mesma TeamColorStr - ALIADO" << std::endl;
+                                    return Alignment::ALLY;
+                                }
+                            }
+                        }
+                    }
+                    
+                    if (logger.is_open()) logger << "[TEAM] TeamColorStr diferente ou invalido - INIMIGO" << std::endl;
+                    return Alignment::ENEMY;
+                }
+                case 14: {
+                    if (logger.is_open()) logger << "[TEAM] Method 14: Player::IsSameTeam(BHGGAEEHJCO) instance method" << std::endl;
+                    if (!localObj || !entity.obj) {
+                        return entity.teamId == localTeamId ? Alignment::ALLY : Alignment::ENEMY;
+                    }
+                    
+                    // Obter PlayerID da entidade usando offsets conhecidos
+                    // Offset correto para BMIGBNMBAJH (PlayerID): 0x3a0
+                    uint64_t entityPlayerId = 0;
+                    void* entityIdObj = nullptr;
+                    
+                    // Tentar ler do offset 0x3a0 primeiro (campo BMIGBNMBAJH)
+                    entityIdObj = *(void**)((uintptr_t)entity.obj + 0x3a0);
+                    if (!entityIdObj) {
+                        // Fallback para outros offsets
+                        int idOffsets[] = {0x3b0, 0x3c0, 0x3d0, 0x3d8, 0x400};
+                        for (int off : idOffsets) {
+                            entityIdObj = *(void**)((uintptr_t)entity.obj + off);
+                            if (entityIdObj) break;
+                        }
+                    }
+                    
+                    if (!entityIdObj) {
+                        if (logger.is_open()) logger << "[TEAM] PlayerID object nao encontrado, fallback" << std::endl;
+                        return entity.teamId == localTeamId ? Alignment::ALLY : Alignment::ENEMY;
+                    }
+                    
+                    // Criar struct BHGGAEEHJCO completa a partir do objeto
+                    // A struct tem: UInt32(0x10), UInt32(0x14), Byte(0x18), Byte(0x19), UInt64(0x20)
+                    BHGGAEEHJCO_V2 entityId;
+                    entityId.field0 = *(uint32_t*)((uintptr_t)entityIdObj + 0x10);
+                    entityId.field1 = *(uint32_t*)((uintptr_t)entityIdObj + 0x14);
+                    entityId.field2 = *(uint8_t*)((uintptr_t)entityIdObj + 0x18);
+                    entityId.field3 = *(uint8_t*)((uintptr_t)entityIdObj + 0x19);
+                    entityId.field4 = *(uint64_t*)((uintptr_t)entityIdObj + 0x20);
+                    
+                    if (logger.is_open()) {
+                        logger << "[TEAM] Entity PlayerID: " << entityId.field4 << std::endl;
+                    }
+                    
+                    // Chamar metodo IsSameTeam da instancia Player
+                    void* playerClass = Il2Cpp::GetClass("Assembly-CSharp.dll", "COW.GamePlay", "Player");
+                    if (!playerClass) {
+                        playerClass = Il2Cpp::object_get_class(localObj);
+                    }
+                    
+                    if (playerClass) {
+                        void* isSameTeamMethod = Il2Cpp::class_get_method_from_name(playerClass, "IsSameTeam", 1);
+                        if (isSameTeamMethod) {
+                            void* args[1] = { &entityId };
+                            void* result = Il2Cpp::runtime_invoke(isSameTeamMethod, localObj, args, nullptr);
+                            if (result) {
+                                bool isSameTeam = *(bool*)((uintptr_t)result + 0x10);
+                                if (logger.is_open()) logger << "[TEAM] Player::IsSameTeam(): " << (isSameTeam ? "ALLY" : "ENEMY") << std::endl;
+                                return isSameTeam ? Alignment::ALLY : Alignment::ENEMY;
+                            }
+                        }
+                    }
+                    
+                    return entity.teamId == localTeamId ? Alignment::ALLY : Alignment::ENEMY;
+                }
+                case 15: {
+                    if (logger.is_open()) logger << "[TEAM] Method 15: Direct memory byte comparison (raw)" << std::endl;
+                    if (!localObj || !entity.obj) {
+                        return entity.teamId == localTeamId ? Alignment::ALLY : Alignment::ENEMY;
+                    }
+                    
+                    // Comparar bytes em offsets especificos que podem indicar time
+                    // Offset 0x3cc = TeamModeID (UInt32)
+                    // Offset 0x7a0 = TeamColorStr (String)
+                    // Offset 0x4c4 = TeamMapMark (Vector3)
+                    
+                    uint32_t localTeamModeId = *(uint32_t*)((uintptr_t)localObj + 0x3cc);
+                    uint32_t entityTeamModeId = *(uint32_t*)((uintptr_t)entity.obj + 0x3cc);
+                    
+                    if (logger.is_open()) {
+                        logger << "[TEAM] Local TeamModeID (0x3cc): " << localTeamModeId << std::endl;
+                        logger << "[TEAM] Entity TeamModeID (0x3cc): " << entityTeamModeId << std::endl;
+                    }
+                    
+                    if (localTeamModeId == entityTeamModeId && localTeamModeId != 0) {
+                        if (logger.is_open()) logger << "[TEAM] Mesmo TeamModeID - ALIADO" << std::endl;
+                        return Alignment::ALLY;
+                    }
+                    
+                    // Tentar comparar bytes em intervalos maiores
+                    // Comparar 8 bytes em offset 0x3a0 (PlayerID area)
+                    uint64_t localBytes = *(uint64_t*)((uintptr_t)localObj + 0x3a0);
+                    uint64_t entityBytes = *(uint64_t*)((uintptr_t)entity.obj + 0x3a0);
+                    
+                    if (logger.is_open()) {
+                        logger << "[TEAM] Local bytes (0x3a0): 0x" << std::hex << localBytes << std::dec << std::endl;
+                        logger << "[TEAM] Entity bytes (0x3a0): 0x" << std::hex << entityBytes << std::dec << std::endl;
+                    }
+                    
+                    // Se os bytes forem identicos, e o mesmo jogador ou mesmo time
+                    if (localBytes == entityBytes && localBytes != 0) {
+                        if (logger.is_open()) logger << "[TEAM] Mesmos bytes em 0x3a0 - ALIADO" << std::endl;
+                        return Alignment::ALLY;
+                    }
+                    
+                    return Alignment::ENEMY;
                 }
                 default: {
                     if (logger.is_open()) logger << "[TEAM] Method default: Fallback teamId compare (local=" << localTeamId << ")" << std::endl;
                     return entity.teamId == localTeamId ? Alignment::ALLY : Alignment::ENEMY;
                 }
             }
+        }
+
+        // ===== NOVO: Detectar time do jogador local de forma precisa =====
+        // Struct BHGGAEEHJCO v2 com layout correto do dump.cs
+        struct BHGGAEEHJCO_V2 {
+            uint32_t field0;    // 0x10 - PAOLNBLAPJH
+            uint32_t field1;    // 0x14 - BLDIFPJGDCI  
+            uint8_t  field2;    // 0x18 - KPABJJFADKF
+            uint8_t  field3;    // 0x19 - LLFGPAPJJPA
+            uint8_t  padding[6];// Alinhamento
+            uint64_t field4;    // 0x20 - KAAOOMIEFIG (ID principal)
+            
+            BHGGAEEHJCO_V2() : field0(0), field1(0), field2(0), field3(0), field4(0) {}
+        };
+        
+        // Struct BHGGAEEHJCO (PlayerID) - geralmente 8 bytes (UInt64)
+        struct BHGGAEEHJCO {
+            uint64_t id;
+            
+            BHGGAEEHJCO(uint64_t _id = 0) : id(_id) {}
+            
+            bool operator==(const BHGGAEEHJCO& other) const {
+                return id == other.id;
+            }
+        };
+        
+        int getLocalPlayerTeamId(void* localPlayerObj) {
+            if (!localPlayerObj) return -1;
+            
+            int teamId = -1;
+            
+            // Metodo 1: Usar GameFacade.IsSameTeam com objetos Player diretamente
+            void* gameFacadeClass = Il2Cpp::GetClass("Assembly-CSharp.dll", "COW", "GameFacade");
+            if (gameFacadeClass) {
+                void* isSameTeamMethod = Il2Cpp::class_get_method_from_name(gameFacadeClass, "IsSameTeam", 2);
+                if (isSameTeamMethod) {
+                    // Tentar obter CurrentLocalPlayerID primeiro
+                    void* currentLocalIdMethod = Il2Cpp::class_get_method_from_name(gameFacadeClass, "CurrentLocalPlayerID", 0);
+                    if (currentLocalIdMethod) {
+                        void* localIdResult = Il2Cpp::runtime_invoke(currentLocalIdMethod, nullptr, nullptr, nullptr);
+                        if (localIdResult) {
+                            BHGGAEEHJCO localId = *(BHGGAEEHJCO*)((uintptr_t)localIdResult + 0x10);
+                            if (logger.is_open()) logger << "[TEAM] Local PlayerID obtido: " << localId.id << std::endl;
+                        }
+                    }
+                }
+            }
+            
+            // Metodo 2: Getter get_TeamID da classe Player
+            void* playerKlass = Il2Cpp::object_get_class(localPlayerObj);
+            if (playerKlass) {
+                void* getTeamMethod = Il2Cpp::GetMethodRecursively(playerKlass, "get_TeamID", 0);
+                if (!getTeamMethod) getTeamMethod = Il2Cpp::GetMethodRecursively(playerKlass, "GetTeamID", 0);
+                if (!getTeamMethod) getTeamMethod = Il2Cpp::GetMethodRecursively(playerKlass, "get_Team", 0);
+                
+                if (getTeamMethod) {
+                    void* teamObj = Il2Cpp::runtime_invoke(getTeamMethod, localPlayerObj, nullptr, nullptr);
+                    if (teamObj) {
+                        teamId = *(int32_t*)((uintptr_t)teamObj + 0x10);
+                        if (logger.is_open()) logger << "[TEAM] Local player TeamID (getter): " << teamId << std::endl;
+                        return teamId;
+                    }
+                }
+            }
+            
+            // Metodo 3: Campo direto no objeto (offsets atualizados)
+            if (teamId == -1) {
+                // Offsets comuns para TeamID em jogadores (atualizados para nova versao)
+                int possibleOffsets[] = {0x3D8, 0x3E0, 0x3B8, 0x3C0, 0x2F0, 0x2F8, 0x4A0, 0x4B0, 0x4C0};
+                for (int offset : possibleOffsets) {
+                    int possibleTeamId = *(int32_t*)((uintptr_t)localPlayerObj + offset);
+                    // Validar se parece um team ID valido (geralmente 0-50 em jogos)
+                    if (possibleTeamId >= 0 && possibleTeamId <= 100) {
+                        if (logger.is_open()) logger << "[TEAM] Local player TeamID (offset " << offset << "): " << possibleTeamId << std::endl;
+                        return possibleTeamId;
+                    }
+                }
+            }
+            
+            // Metodo 4: Via GameData.GetMyTeamID
+            void* gameDataClass = Il2Cpp::GetClass("Assembly-CSharp.dll", "COW", "GameData");
+            if (gameDataClass) {
+                void* getMyTeamMethod = Il2Cpp::class_get_method_from_name(gameDataClass, "GetMyTeamID", 0);
+                if (getMyTeamMethod) {
+                    void* result = Il2Cpp::runtime_invoke(getMyTeamMethod, nullptr, nullptr, nullptr);
+                    if (result) {
+                        teamId = *(int32_t*)((uintptr_t)result + 0x10);
+                        if (logger.is_open()) logger << "[TEAM] Local player TeamID (GameData): " << teamId << std::endl;
+                        return teamId;
+                    }
+                }
+            }
+            
+            // Metodo 5: Via GameFacade.CurrentLocalPlayerTeamIndex
+            if (gameFacadeClass) {
+                void* getTeamIndexMethod = Il2Cpp::class_get_method_from_name(gameFacadeClass, "CurrentLocalPlayerTeamIndex", 0);
+                if (getTeamIndexMethod) {
+                    void* result = Il2Cpp::runtime_invoke(getTeamIndexMethod, nullptr, nullptr, nullptr);
+                    if (result) {
+                        teamId = *(int32_t*)((uintptr_t)result + 0x10);
+                        if (logger.is_open()) logger << "[TEAM] Local player TeamID (GameFacade): " << teamId << std::endl;
+                        return teamId;
+                    }
+                }
+            }
+            
+            if (logger.is_open()) logger << "[TEAM] Falha ao detectar TeamID do jogador local, usando fallback" << std::endl;
+            return 1; // Fallback: assume time 1
+        }
+        
+        // ===== NOVO: Verificar se dois jogadores sao do mesmo time usando GameFacade =====
+        bool checkSameTeam(void* localPlayerObj, void* entityObj) {
+            if (!localPlayerObj || !entityObj) return false;
+            
+            void* gameFacadeClass = Il2Cpp::GetClass("Assembly-CSharp.dll", "COW", "GameFacade");
+            if (!gameFacadeClass) return false;
+            
+            // Tentar GameFacade.IsSameTeam(Player, Player)
+            void* isSameTeamMethod = Il2Cpp::class_get_method_from_name(gameFacadeClass, "IsSameTeam", 2);
+            if (isSameTeamMethod) {
+                void* args[2] = { localPlayerObj, entityObj };
+                void* result = Il2Cpp::runtime_invoke(isSameTeamMethod, nullptr, args, nullptr);
+                if (result) {
+                    bool isSame = *(bool*)((uintptr_t)result + 0x10);
+                    if (logger.is_open()) logger << "[TEAM] GameFacade.IsSameTeam(Player, Player): " << (isSame ? "true" : "false") << std::endl;
+                    return isSame;
+                }
+            }
+            
+            // Fallback: comparar PlayerIDs
+            void* currentLocalIdMethod = Il2Cpp::class_get_method_from_name(gameFacadeClass, "CurrentLocalPlayerID", 0);
+            if (currentLocalIdMethod && entityObj) {
+                // Obter PlayerID do jogador local
+                void* localIdResult = Il2Cpp::runtime_invoke(currentLocalIdMethod, nullptr, nullptr, nullptr);
+                if (localIdResult) {
+                    BHGGAEEHJCO localId = *(BHGGAEEHJCO*)((uintptr_t)localIdResult + 0x10);
+                    
+                    // Tentar obter PlayerID da entidade (pode estar em campo especifico)
+                    void* entityKlass = Il2Cpp::object_get_class(entityObj);
+                    void* getPlayerIdMethod = Il2Cpp::GetMethodRecursively(entityKlass, "get_PlayerID", 0);
+                    if (!getPlayerIdMethod) getPlayerIdMethod = Il2Cpp::GetMethodRecursively(entityKlass, "GetPlayerID", 0);
+                    
+                    if (getPlayerIdMethod) {
+                        void* entityIdResult = Il2Cpp::runtime_invoke(getPlayerIdMethod, entityObj, nullptr, nullptr);
+                        if (entityIdResult) {
+                            BHGGAEEHJCO entityId = *(BHGGAEEHJCO*)((uintptr_t)entityIdResult + 0x10);
+                            
+                            // Usar GameFacade.IsSameTeam(BHGGAEEHJCO, BHGGAEEHJCO)
+                            void* isSameTeamIdMethod = Il2Cpp::class_get_method_from_name(gameFacadeClass, "IsSameTeam", 2);
+                            if (isSameTeamIdMethod) {
+                                void* idArgs[2] = { &localId, &entityId };
+                                void* idResult = Il2Cpp::runtime_invoke(isSameTeamIdMethod, nullptr, idArgs, nullptr);
+                                if (idResult) {
+                                    bool isSame = *(bool*)((uintptr_t)idResult + 0x10);
+                                    if (logger.is_open()) logger << "[TEAM] GameFacade.IsSameTeam(ID, ID): " << (isSame ? "true" : "false") << std::endl;
+                                    return isSame;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            
+            return false;
         }
 
         bool checkWall(PlayerEntity& target, Vector3& localPos) {
@@ -706,7 +1279,12 @@ namespace GhostSystems {
                                         if (isLocal && !foundLocal) {
                                             foundLocal = true;
                                             currentLocalPos = p.position;
-                                            currentLocalTeamId = p.teamId;
+                                            // Usar metodo preciso para detectar time do jogador local
+                                            currentLocalTeamId = getLocalPlayerTeamId(entityObj);
+                                            if (currentLocalTeamId == -1 || currentLocalTeamId == 0) {
+                                                // Fallback: usar teamId da entidade ou valor padrao
+                                                currentLocalTeamId = p.teamId > 0 ? p.teamId : 1;
+                                            }
                                             currentLocalObj = entityObj;
                                             continue; // Ignora apenas o primeiro local detectado
                                         }

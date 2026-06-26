@@ -132,6 +132,252 @@ extern Menu* g_Menu;
         }
     }
 
+    // ===== NOVO: DEBUG COMPLETO DA ENTITYLIST =====
+    void GhostSystems::Menu::drawEntityDebug() {
+        std::vector<PlayerEntity> localEntities;
+        void* localPlayer = nullptr;
+        int localTeam = -1;
+        {
+            std::lock_guard<std::mutex> lock(sharedState.mtx);
+            localEntities = sharedState.entities;
+            localPlayer = sharedState.localPlayerObj;
+            localTeam = sharedState.localPlayerTeamId;
+        }
+        
+        // Info geral
+        ImGui::TextColored(ImVec4(0.0f, 1.0f, 1.0f, 1.0f), "Debug de Entidades - Total: %zu", localEntities.size());
+        ImGui::Text("Jogador Local: %p | TeamID: %d", localPlayer, localTeam);
+        ImGui::Separator();
+        
+        // Filtros
+        ImGui::InputText("Filtrar por nome", entityFilter, sizeof(entityFilter));
+        ImGui::SameLine();
+        ImGui::Checkbox("Só Inimigos", &showOnlyEnemies);
+        ImGui::SameLine();
+        ImGui::Checkbox("Só Aliados", &showOnlyAllies);
+        ImGui::SameLine();
+        ImGui::Checkbox("Ordenar por distancia", &sortByDistance);
+        
+        // Ordenar se necessario
+        if (sortByDistance) {
+            std::sort(localEntities.begin(), localEntities.end(), [](const PlayerEntity& a, const PlayerEntity& b) {
+                return a.distanceToLocal < b.distanceToLocal;
+            });
+        }
+        
+        // Contadores
+        int allyCount = 0, enemyCount = 0, neutralCount = 0;
+        for (const auto& e : localEntities) {
+            if (e.alignment == Alignment::ALLY) allyCount++;
+            else if (e.alignment == Alignment::ENEMY) enemyCount++;
+            else neutralCount++;
+        }
+        ImGui::TextColored(ImVec4(0.3f, 1.0f, 0.3f, 1.0f), "Aliados: %d", allyCount);
+        ImGui::SameLine();
+        ImGui::TextColored(ImVec4(1.0f, 0.3f, 0.3f, 1.0f), "Inimigos: %d", enemyCount);
+        ImGui::SameLine();
+        ImGui::TextColored(ImVec4(0.5f, 0.5f, 0.5f, 1.0f), "Neutros: %d", neutralCount);
+        
+        ImGui::Separator();
+        
+        // Tabela de debug detalhado
+        if (ImGui::BeginTable("EntityDebugTable", 9, ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg | ImGuiTableFlags_ScrollY | ImGuiTableFlags_Sortable, ImVec2(0, 400))) {
+            ImGui::TableSetupScrollFreeze(0, 1);
+            ImGui::TableSetupColumn("#", ImGuiTableColumnFlags_WidthFixed, 30.0f);
+            ImGui::TableSetupColumn("Obj Pointer", ImGuiTableColumnFlags_WidthFixed, 100.0f);
+            ImGui::TableSetupColumn("Nome", ImGuiTableColumnFlags_WidthFixed, 100.0f);
+            ImGui::TableSetupColumn("Dist", ImGuiTableColumnFlags_WidthFixed, 60.0f);
+            ImGui::TableSetupColumn("TeamID", ImGuiTableColumnFlags_WidthFixed, 50.0f);
+            ImGui::TableSetupColumn("Alignment", ImGuiTableColumnFlags_WidthFixed, 70.0f);
+            ImGui::TableSetupColumn("PlayerID", ImGuiTableColumnFlags_WidthFixed, 100.0f);
+            ImGui::TableSetupColumn("Classe", ImGuiTableColumnFlags_WidthStretch);
+            ImGui::TableSetupColumn("Status", ImGuiTableColumnFlags_WidthFixed, 60.0f);
+            ImGui::TableHeadersRow();
+            
+            int idx = 0;
+            for (const auto& entity : localEntities) {
+                // Filtros
+                if (showOnlyEnemies && entity.alignment != Alignment::ENEMY) continue;
+                if (showOnlyAllies && entity.alignment != Alignment::ALLY) continue;
+                if (strlen(entityFilter) > 0 && strstr(entity.name, entityFilter) == nullptr) continue;
+                
+                ImGui::TableNextRow();
+                
+                // Index
+                ImGui::TableSetColumnIndex(0);
+                ImGui::Text("%d", idx++);
+                
+                // Obj Pointer
+                ImGui::TableSetColumnIndex(1);
+                char ptrStr[32];
+                snprintf(ptrStr, sizeof(ptrStr), "%p", entity.obj);
+                if (ImGui::Selectable(ptrStr, selectedDebugEntity == idx, ImGuiSelectableFlags_SpanAllColumns)) {
+                    selectedDebugEntity = idx;
+                    selectedEntityObj = entity.obj;
+                }
+                
+                // Nome
+                ImGui::TableSetColumnIndex(2);
+                ImVec4 nameColor = ImVec4(1.0f, 1.0f, 1.0f, 1.0f);
+                if (entity.alignment == Alignment::ENEMY) nameColor = ImVec4(1.0f, 0.3f, 0.3f, 1.0f);
+                else if (entity.alignment == Alignment::ALLY) nameColor = ImVec4(0.3f, 1.0f, 0.3f, 1.0f);
+                ImGui::PushStyleColor(ImGuiCol_Text, nameColor);
+                ImGui::Text("%s", entity.name);
+                ImGui::PopStyleColor();
+                
+                // Distancia
+                ImGui::TableSetColumnIndex(3);
+                ImGui::Text("%.1f", entity.distanceToLocal);
+                
+                // TeamID
+                ImGui::TableSetColumnIndex(4);
+                ImGui::Text("%d", entity.teamId);
+                
+                // Alignment
+                ImGui::TableSetColumnIndex(5);
+                if (entity.alignment == Alignment::ALLY) ImGui::TextColored(ImVec4(0.0f, 1.0f, 0.0f, 1.0f), "ALLY");
+                else if (entity.alignment == Alignment::ENEMY) ImGui::TextColored(ImVec4(1.0f, 0.0f, 0.0f, 1.0f), "ENEMY");
+                else ImGui::TextColored(ImVec4(0.5f, 0.5f, 0.5f, 1.0f), "NEUTRAL");
+                
+                // PlayerID (BHGGAEEHJCO) - tentar ler do offset
+                ImGui::TableSetColumnIndex(6);
+                if (entity.obj) {
+                    uint64_t playerId = 0;
+                    int offsetsToTry[] = {0x3B0, 0x3A0, 0x3C0, 0x3D0, 0x400, 0x420};
+                    for (int off : offsetsToTry) {
+                        uint64_t possibleId = *(uint64_t*)((uintptr_t)entity.obj + off);
+                        if (possibleId != 0 && possibleId != 0xFFFFFFFFFFFFFFFF) {
+                            playerId = possibleId;
+                            break;
+                        }
+                    }
+                    if (playerId != 0) {
+                        ImGui::Text("%lX", (unsigned long)playerId);
+                    } else {
+                        ImGui::TextColored(ImVec4(0.5f, 0.5f, 0.5f, 1.0f), "N/A");
+                    }
+                } else {
+                    ImGui::Text("-");
+                }
+                
+                // Classe
+                ImGui::TableSetColumnIndex(7);
+                if (entity.obj && Il2Cpp::object_get_class) {
+                    void* klass = Il2Cpp::object_get_class(entity.obj);
+                    if (klass && Il2Cpp::class_get_name) {
+                        const char* className = Il2Cpp::class_get_name(klass);
+                        ImGui::Text("%s", className ? className : "Unknown");
+                    } else {
+                        ImGui::Text("Invalid");
+                    }
+                } else {
+                    ImGui::Text("-");
+                }
+                
+                // Status
+                ImGui::TableSetColumnIndex(8);
+                if (!entity.isAlive()) ImGui::TextColored(ImVec4(0.5f, 0.5f, 0.5f, 1.0f), "DEAD");
+                else if (entity.isKnocked) ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.0f, 1.0f), "DOWN");
+                else ImGui::TextColored(ImVec4(0.0f, 1.0f, 0.0f, 1.0f), "ALIVE");
+            }
+            ImGui::EndTable();
+        }
+        
+        // Detalhes da entidade selecionada
+        if (selectedEntityObj && selectedDebugEntity >= 0 && selectedDebugEntity < (int)localEntities.size()) {
+            const auto& selected = localEntities[selectedDebugEntity];
+            ImGui::Separator();
+            ImGui::TextColored(ImVec4(1.0f, 1.0f, 0.0f, 1.0f), "Detalhes da Entidade Selecionada:");
+            
+            if (ImGui::BeginChild("EntityDetails", ImVec2(0, 200), true)) {
+                ImGui::Text("Obj Pointer: %p", selected.obj);
+                ImGui::Text("Base Address: %lX", (unsigned long)selected.baseAddress);
+                ImGui::Text("Nome: %s", selected.name);
+                ImGui::Text("Posicao: %.2f, %.2f, %.2f", selected.position.x, selected.position.y, selected.position.z);
+                ImGui::Text("Vida: %.0f / %.0f", selected.health, selected.maxHealth);
+                ImGui::Text("Distancia: %.2f", selected.distanceToLocal);
+                ImGui::Text("TeamID: %d", selected.teamId);
+                ImGui::Text("Alignment: %s", selected.alignment == Alignment::ALLY ? "ALLY" : (selected.alignment == Alignment::ENEMY ? "ENEMY" : "NEUTRAL"));
+                ImGui::Text("IsBot: %s", selected.isBot ? "Sim" : "Nao");
+                ImGui::Text("IsVisible: %s", selected.isVisible ? "Sim" : "Nao");
+                
+                // Tentar obter mais info
+                if (selected.obj) {
+                    void* klass = Il2Cpp::object_get_class(selected.obj);
+                    if (klass) {
+                        const char* className = Il2Cpp::class_get_name(klass);
+                        ImGui::Text("Classe: %s", className ? className : "Unknown");
+                        
+                        // Tentar ler PlayerID de varios offsets
+                        ImGui::Separator();
+                        ImGui::TextColored(ImVec4(0.0f, 1.0f, 1.0f, 1.0f), "PlayerID Offsets:");
+                        int offsets[] = {0x3B0, 0x3A0, 0x3C0, 0x3D0, 0x3E0, 0x400, 0x420, 0x3B8, 0x3C8};
+                        for (int off : offsets) {
+                            uint64_t val = *(uint64_t*)((uintptr_t)selected.obj + off);
+                                if (val != 0 && val != 0xFFFFFFFFFFFFFFFF) {
+                                ImGui::Text("  [0x%X]: %lX (DEC: %lu)", off, (unsigned long)val, (unsigned long)val);
+                            } else {
+                                ImGui::TextDisabled("  [0x%X]: %lX", off, (unsigned long)val);
+                            }
+                        }
+                        
+                        // Tentar ler TeamID de varios offsets
+                        ImGui::Separator();
+                        ImGui::TextColored(ImVec4(0.0f, 1.0f, 1.0f, 1.0f), "TeamID Offsets:");
+                        int teamOffsets[] = {0x3D8, 0x3E0, 0x3B8, 0x3C0, 0x2F0, 0x2F8, 0x4A0, 0x4B0, 0x4C0};
+                        for (int off : teamOffsets) {
+                            int val = *(int*)((uintptr_t)selected.obj + off);
+                            ImGui::Text("  [0x%X]: %d", off, val);
+                        }
+                        
+                        // NOVO: TeamModeID (offset 0x3cc)
+                        ImGui::Separator();
+                        ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.0f, 1.0f), "NOVOS Offsets (dump.cs):");
+                        uint32_t teamModeId = *(uint32_t*)((uintptr_t)selected.obj + 0x3cc);
+                        ImGui::Text("  TeamModeID [0x3cc]: %u", teamModeId);
+                        
+                        // TeamColorStr (offset 0x7a0) - String pointer
+                        void** teamColorStrPtr = (void**)((uintptr_t)selected.obj + 0x7a0);
+                        if (teamColorStrPtr && *teamColorStrPtr) {
+                            void* strObj = *teamColorStrPtr;
+                            // Il2CppString layout: header(0x10) + length(4) + chars(2*length)
+                            int32_t strLen = *(int32_t*)((uintptr_t)strObj + 0x10);
+                            if (strLen > 0 && strLen < 100) {
+                                // Tentar ler a string
+                                char strBuffer[64] = {0};
+                                void* chars = (void*)((uintptr_t)strObj + 0x14);
+                                if (chars) {
+                                    // Converter de UTF-16 para ASCII
+                                    for (int i = 0; i < strLen && i < 63; i++) {
+                                        strBuffer[i] = ((char*)chars)[i * 2];
+                                    }
+                                    ImGui::Text("  TeamColorStr [0x7a0]: %s", strBuffer);
+                                } else {
+                                    ImGui::Text("  TeamColorStr [0x7a0]: <ptr:%p>", strObj);
+                                }
+                            } else {
+                                ImGui::TextDisabled("  TeamColorStr [0x7a0]: <empty or invalid len:%d>", strLen);
+                            }
+                        } else {
+                            ImGui::TextDisabled("  TeamColorStr [0x7a0]: null");
+                        }
+                        
+                        // PlayerID correto (BMIGBNMBAJH) offset 0x3a0
+                        void** playerIdPtr = (void**)((uintptr_t)selected.obj + 0x3a0);
+                        if (playerIdPtr && *playerIdPtr) {
+                            void* idObj = *playerIdPtr;
+                            uint64_t idVal = *(uint64_t*)((uintptr_t)idObj + 0x20);
+                            ImGui::Text("  PlayerID [0x3a0]: 0x%lX", (unsigned long)idVal);
+                        } else {
+                            ImGui::TextDisabled("  PlayerID [0x3a0]: null");
+                        }
+                    }
+                }
+            }
+            ImGui::EndChild();
+        }
+    }
+
     void GhostSystems::Menu::render() {
         if (!isVisible) return;
 
@@ -318,6 +564,19 @@ extern Menu* g_Menu;
                                     OBFUSCATE("Custom Raycast")
                                 };
                                 ImGui::Combo(OBFUSCATE("Metodo"), &featureConfig.wallCheckMethod, wallCheckMethods, IM_ARRAYSIZE(wallCheckMethods));
+                                
+                                ImGui::Separator();
+                                ImGui::TextColored(ImVec4(0.0f, 1.0f, 1.0f, 1.0f), "%s", OBFUSCATE("Raycast Preciso (Bones)"));
+                                ImGui::Checkbox(OBFUSCATE("Testar multiplos pontos (cabeca/pescoco/peito)"), &wallCheckMultiplePoints);
+                                
+                                const char* originOptions[] = {
+                                    OBFUSCATE("Posicao do pe"),
+                                    OBFUSCATE("Posicao do peito"),
+                                    OBFUSCATE("Posicao da cabeca (Recomendado)")
+                                };
+                                ImGui::Combo(OBFUSCATE("Origem do jogador local"), &wallCheckLocalOrigin, originOptions, IM_ARRAYSIZE(originOptions));
+                                
+                                ImGui::TextColored(ImVec4(0.7f, 0.7f, 0.7f, 1.0f), "%s", OBFUSCATE("Origem na cabeca + teste multiplo = mais preciso"));
                             }
                         }
                         ImGui::EndTabItem();
@@ -345,17 +604,26 @@ extern Menu* g_Menu;
                         ImGui::Checkbox(OBFUSCATE("Ativar Team-Check"), &featureConfig.teamCheckEnabled);
                         if (featureConfig.teamCheckEnabled) {
                             const char* teamCheckMethods[] = {
-                                OBFUSCATE("GetMyTeamID"),
-                                OBFUSCATE("PlayerCache.GetTeamByObject"),
-                                OBFUSCATE("TeamService.IsAlly"),
-                                OBFUSCATE("TeamID Compare"),
-                                OBFUSCATE("Always Neutral"),
-                                OBFUSCATE("Alignment.GetAlignment"),
-                                OBFUSCATE("IsSameTeamWithPlayerID"),
-                                OBFUSCATE("TeamID Fallback")
+                                OBFUSCATE("0: GetMyTeamID"),
+                                OBFUSCATE("1: PlayerCache.GetTeamByObject"),
+                                OBFUSCATE("2: TeamService.IsAlly"),
+                                OBFUSCATE("3: TeamID Compare"),
+                                OBFUSCATE("4: Always Neutral"),
+                                OBFUSCATE("5: Alignment.GetAlignment"),
+                                OBFUSCATE("6: IsSameTeamWithPlayerID (BHGGAEEHJCO)"),
+                                OBFUSCATE("7: GameFacade.IsSameTeam(Player)"),
+                                OBFUSCATE("8: GameFacade.IsSameTeam(PlayerID)"),
+                                OBFUSCATE("9: PlayerID Direct Compare"),
+                                OBFUSCATE("10: GameFacade.CheckSameTeam"),
+                                OBFUSCATE("11: GetRelationWithTrackedPlayer"),
+                                OBFUSCATE("12: Field Scan 'm_Team'"),
+                                OBFUSCATE("13: TeamColorStr Compare (0x7a0) RECOMENDADO"),
+                                OBFUSCATE("14: Player::IsSameTeam(BHGGAEEHJCO) RECOMENDADO"),
+                                OBFUSCATE("15: Raw Memory Compare (0x3cc, 0x3a0)")
                             };
                             ImGui::Combo(OBFUSCATE("Metodo Team-Check"), &featureConfig.teamCheckMethod, teamCheckMethods, IM_ARRAYSIZE(teamCheckMethods));
-                            ImGui::TextColored(ImVec4(0.5f, 0.5f, 0.5f, 1.0f), "%s", OBFUSCATE("Metodo 6: IsSameTeamWithPlayerID (recomendado)"));
+                            ImGui::TextColored(ImVec4(0.0f, 1.0f, 0.0f, 1.0f), "%s", OBFUSCATE("NOVOS RECOMENDADOS: 13, 14 - Baseados na estrutura real do dump.cs"));
+                            ImGui::TextColored(ImVec4(0.5f, 0.5f, 0.5f, 1.0f), "%s", OBFUSCATE("Use a aba 'Entity Debug' para ver os valores reais dos offsets"));
                         }
                         ImGui::EndTabItem();
                     }
@@ -366,6 +634,10 @@ extern Menu* g_Menu;
 
                             ImGui::Text("%s", OBFUSCATE("Entidades Encontradas:"));
                             drawEntityList();
+                            ImGui::EndTabItem();
+                        }
+                        if (ImGui::BeginTabItem(OBFUSCATE("Entity Debug"))) {
+                            drawEntityDebug();
                             ImGui::EndTabItem();
                         }
                         if (ImGui::BeginTabItem(OBFUSCATE("Entity Props"))) {
@@ -820,55 +1092,118 @@ extern Menu* g_Menu;
               if (nowMs - entity.lastWallCheckMs < throttleTime) continue; // Pula se ainda nao deu o tempo
               entity.lastWallCheckMs = nowMs;
 
-              // Melhoria de precisao: Raycast partindo da altura do peito/cabeca (evita bater no chao)
-              float localEyeY = localPos.y + 1.4f;
-              float targetEyeY = entity.position.y + 1.4f;
-
-              float dx = entity.position.x - localPos.x;
-              float dy = targetEyeY - localEyeY;
-              float dz = entity.position.z - localPos.z;
-              float dist = sqrt(dx*dx + dy*dy + dz*dz);
-
-              bool hitObstacle = false;
-              if (dist > 1.0f) {
+              // ===== NOVO: Raycast preciso com bones =====
+              // Obter posicao de origem do jogador local baseado na configuracao
+              float localOriginX, localOriginY, localOriginZ;
+              bool hasLocalOrigin = false;
+              
+              if (wallCheckLocalOrigin == 2) {
+                  // Cabeca
+                  hasLocalOrigin = getLocalPlayerBonePosition(2, &localOriginX, &localOriginY, &localOriginZ);
+              } else if (wallCheckLocalOrigin == 1) {
+                  // Peito
+                  hasLocalOrigin = getLocalPlayerBonePosition(1, &localOriginX, &localOriginY, &localOriginZ);
+              }
+              
+              if (!hasLocalOrigin) {
+                  // Fallback: usar posicao do transform + offset estimado
+                  localOriginX = localPos.x;
+                  localOriginY = localPos.y + (wallCheckLocalOrigin == 2 ? 1.6f : (wallCheckLocalOrigin == 1 ? 1.4f : 0.0f));
+                  localOriginZ = localPos.z;
+              }
+              
+              // Pontos a testar no alvo (prioridade: Cabeca > Pescoco > Peito)
+              struct TargetPoint {
+                  float x, y, z;
+                  int boneType; // 2=cabeca, 3=pescoco, 1=peito
+              };
+              std::vector<TargetPoint> targetPoints;
+              
+              // Tentar obter posicoes reais dos bones do alvo
+              float headX, headY, headZ;
+              float neckX, neckY, neckZ;
+              float chestX, chestY, chestZ;
+              
+              if (getEntityBonePosition(entity.obj, 2, &headX, &headY, &headZ)) {
+                  targetPoints.push_back({headX, headY, headZ, 2});
+              }
+              if (wallCheckMultiplePoints && getEntityBonePosition(entity.obj, 3, &neckX, &neckY, &neckZ)) {
+                  targetPoints.push_back({neckX, neckY, neckZ, 3});
+              }
+              if (wallCheckMultiplePoints && getEntityBonePosition(entity.obj, 1, &chestX, &chestY, &chestZ)) {
+                  targetPoints.push_back({chestX, chestY, chestZ, 1});
+              }
+              
+              // Se nao conseguiu nenhum bone real, usar posicao estimada
+              if (targetPoints.empty()) {
+                  targetPoints.push_back({
+                      entity.position.x, 
+                      entity.position.y + 1.6f, // Estimativa da cabeca
+                      entity.position.z, 
+                      2
+                  });
+              }
+              
+              // Testar visibilidade para cada ponto (se qualquer um estiver visivel, o alvo eh visivel)
+              bool anyVisible = false;
+              int layerMask = ~((1 << 2) | (1 << 4) | (1 << 5)); // Tudo exceto IgnoreRaycast, Water, UI
+              
+              for (const auto& target : targetPoints) {
+                  float dx = target.x - localOriginX;
+                  float dy = target.y - localOriginY;
+                  float dz = target.z - localOriginZ;
+                  float dist = sqrt(dx*dx + dy*dy + dz*dz);
+                  
+                  if (dist <= 1.0f) {
+                      anyVisible = true; // Muito proximo, considerar visivel
+                      break;
+                  }
+                  
                   Vector3Args dir = { dx/dist, dy/dist, dz/dist };
                   Vector3Args origin = {
-                      localPos.x + dir.x * 0.3f, // Comeca um pouco a frente do local player
-                      localEyeY + dir.y * 0.3f,
-                      localPos.z + dir.z * 0.3f
+                      localOriginX + dir.x * 0.2f, // Comeca um pouco a frente da origem
+                      localOriginY + dir.y * 0.2f,
+                      localOriginZ + dir.z * 0.2f
                   };
-                  float rayDist = dist - 1.2f; // Reduz a distancia do raycast para nao bater na hitbox do proprio alvo
+                  float rayDist = dist - 0.5f; // Reduz para nao bater no proprio alvo
                   if (rayDist < 0.1f) rayDist = 0.1f;
-                  int layerMask = ~((1 << 2) | (1 << 4) | (1 << 5)); // Tudo exceto IgnoreRaycast, Water, UI
-
-                if (isLinecast) {
-                    Vector3Args end = { origin.x + dir.x * rayDist, origin.y + dir.y * rayDist, origin.z + dir.z * rayDist };
-                    if (currentParamCount == 3) {
-                        typedef bool (*Linecast_3_t)(Vector3Args, Vector3Args, int, void*);
-                        Linecast_3_t pLinecast = (Linecast_3_t)*(void**)currentMethod;
-                        if (pLinecast) hitObstacle = pLinecast(origin, end, layerMask, currentMethod);
-                    } else if (currentParamCount == 4) {
-                        typedef bool (*Linecast_4_t)(Vector3Args, Vector3Args, int, int, void*);
-                        Linecast_4_t pLinecast = (Linecast_4_t)*(void**)currentMethod;
-                        if (pLinecast) hitObstacle = pLinecast(origin, end, layerMask, 0, currentMethod);
-                    }
-                } else {
-                    if (currentParamCount == 5) {
-                        typedef bool (*Raycast_5_t)(Vector3Args, Vector3Args, float, int, int, void*);
-                        Raycast_5_t pRaycast = (Raycast_5_t)*(void**)currentMethod;
-                        if (pRaycast) hitObstacle = pRaycast(origin, dir, rayDist, layerMask, 0, currentMethod);
-                    } else if (currentParamCount == 4) {
-                        typedef bool (*Raycast_4_t)(Vector3Args, Vector3Args, float, int, void*);
-                        Raycast_4_t pRaycast = (Raycast_4_t)*(void**)currentMethod;
-                        if (pRaycast) hitObstacle = pRaycast(origin, dir, rayDist, layerMask, currentMethod);
-                    } else if (currentParamCount > 5) {
-                        typedef bool (*Raycast_6_t)(Vector3Args, Vector3Args, float, int, int, int, void*);
-                        Raycast_6_t pRaycast = (Raycast_6_t)*(void**)currentMethod;
-                        if (pRaycast) hitObstacle = pRaycast(origin, dir, rayDist, layerMask, 0, 0, currentMethod);
-                    }
-                }
-            }
-            entity.isVisible = !hitObstacle;
+                  
+                  bool hitObstacle = false;
+                  
+                  if (isLinecast) {
+                      Vector3Args end = { target.x, target.y, target.z };
+                      if (currentParamCount == 3) {
+                          typedef bool (*Linecast_3_t)(Vector3Args, Vector3Args, int, void*);
+                          Linecast_3_t pLinecast = (Linecast_3_t)*(void**)currentMethod;
+                          if (pLinecast) hitObstacle = pLinecast(origin, end, layerMask, currentMethod);
+                      } else if (currentParamCount == 4) {
+                          typedef bool (*Linecast_4_t)(Vector3Args, Vector3Args, int, int, void*);
+                          Linecast_4_t pLinecast = (Linecast_4_t)*(void**)currentMethod;
+                          if (pLinecast) hitObstacle = pLinecast(origin, end, layerMask, 0, currentMethod);
+                      }
+                  } else {
+                      if (currentParamCount == 5) {
+                          typedef bool (*Raycast_5_t)(Vector3Args, Vector3Args, float, int, int, void*);
+                          Raycast_5_t pRaycast = (Raycast_5_t)*(void**)currentMethod;
+                          if (pRaycast) hitObstacle = pRaycast(origin, dir, rayDist, layerMask, 0, currentMethod);
+                      } else if (currentParamCount == 4) {
+                          typedef bool (*Raycast_4_t)(Vector3Args, Vector3Args, float, int, void*);
+                          Raycast_4_t pRaycast = (Raycast_4_t)*(void**)currentMethod;
+                          if (pRaycast) hitObstacle = pRaycast(origin, dir, rayDist, layerMask, currentMethod);
+                      } else if (currentParamCount > 5) {
+                          typedef bool (*Raycast_6_t)(Vector3Args, Vector3Args, float, int, int, int, void*);
+                          Raycast_6_t pRaycast = (Raycast_6_t)*(void**)currentMethod;
+                          if (pRaycast) hitObstacle = pRaycast(origin, dir, rayDist, layerMask, 0, 0, currentMethod);
+                      }
+                  }
+                  
+                  if (!hitObstacle) {
+                      anyVisible = true; // Pelo menos um ponto esta visivel
+                      break;
+                  }
+              }
+              
+              entity.isVisible = anyVisible;
         }
     }
 
@@ -3241,6 +3576,119 @@ extern Menu* g_Menu;
             return klass;
         }
         return nullptr;
+    }
+    
+    // ===== IMPLEMENTACAO: OBTER POSICAO DE BONES =====
+    // boneType: 0 = Pe, 1 = Peito, 2 = Cabeca, 3 = Pescoco
+    bool GhostSystems::Menu::getLocalPlayerBonePosition(int boneType, float* outX, float* outY, float* outZ) {
+        if (!sharedState.localPlayerObj || !outX || !outY || !outZ) return false;
+        
+        // Cache dos metodos de bones (primeira vez)
+        if (!boneMethodsCached) {
+            void* playerKlass = Il2Cpp::object_get_class(sharedState.localPlayerObj);
+            if (playerKlass) {
+                getHeadTFMethod = Il2Cpp::GetMethodRecursively(playerKlass, "GetHeadTF", 0);
+                getNeckTFMethod = Il2Cpp::GetMethodRecursively(playerKlass, "GetNeckTF", 0);
+                
+                // Metodo para peito pode ter nome diferente
+                void* getChestMethod = Il2Cpp::GetMethodRecursively(playerKlass, "GetChestTF", 0);
+                if (!getChestMethod) {
+                    getChestMethod = Il2Cpp::GetMethodRecursively(playerKlass, "GetSpineTF", 0);
+                }
+                getChestTFMethod = getChestMethod;
+            }
+            boneMethodsCached = true;
+        }
+        
+        void* targetMethod = nullptr;
+        switch (boneType) {
+            case 2: targetMethod = getHeadTFMethod; break;  // Cabeca
+            case 3: targetMethod = getNeckTFMethod; break;  // Pescoco
+            case 1: targetMethod = getChestTFMethod; break; // Peito
+            default: return false; // Pe nao tem metodo especifico, usa transform
+        }
+        
+        if (!targetMethod) return false;
+        
+        void* exc = nullptr;
+        void* boneTransform = Il2Cpp::runtime_invoke(targetMethod, sharedState.localPlayerObj, nullptr, &exc);
+        if (!boneTransform || exc) return false;
+        
+        // Cache do get_position
+        static void* getPosMethod = nullptr;
+        if (!getPosMethod) {
+            void* transformKlass = Il2Cpp::GetClass("UnityEngine.CoreModule.dll", "UnityEngine", "Transform");
+            if (transformKlass) {
+                getPosMethod = Il2Cpp::GetMethodRecursively(transformKlass, "get_position", 0);
+            }
+        }
+        
+        if (!getPosMethod) return false;
+        
+        void* posObj = Il2Cpp::runtime_invoke(getPosMethod, boneTransform, nullptr, &exc);
+        if (!posObj || exc) return false;
+        
+        struct Vector3Args { float x, y, z; };
+        Vector3Args pos = *(Vector3Args*)((uintptr_t)posObj + 0x10);
+        
+        *outX = pos.x;
+        *outY = pos.y;
+        *outZ = pos.z;
+        
+        return true;
+    }
+    
+    bool GhostSystems::Menu::getEntityBonePosition(void* entityObj, int boneType, float* outX, float* outY, float* outZ) {
+        if (!entityObj || !outX || !outY || !outZ) return false;
+        
+        void* playerKlass = Il2Cpp::object_get_class(entityObj);
+        if (!playerKlass) return false;
+        
+        void* targetMethod = nullptr;
+        switch (boneType) {
+            case 2: // Cabeca
+                targetMethod = Il2Cpp::GetMethodRecursively(playerKlass, "GetHeadTF", 0);
+                break;
+            case 3: // Pescoco
+                targetMethod = Il2Cpp::GetMethodRecursively(playerKlass, "GetNeckTF", 0);
+                break;
+            case 1: { // Peito
+                targetMethod = Il2Cpp::GetMethodRecursively(playerKlass, "GetChestTF", 0);
+                if (!targetMethod) {
+                    targetMethod = Il2Cpp::GetMethodRecursively(playerKlass, "GetSpineTF", 0);
+                }
+                break;
+            }
+            default: return false;
+        }
+        
+        if (!targetMethod) return false;
+        
+        void* exc = nullptr;
+        void* boneTransform = Il2Cpp::runtime_invoke(targetMethod, entityObj, nullptr, &exc);
+        if (!boneTransform || exc) return false;
+        
+        static void* getPosMethod = nullptr;
+        if (!getPosMethod) {
+            void* transformKlass = Il2Cpp::GetClass("UnityEngine.CoreModule.dll", "UnityEngine", "Transform");
+            if (transformKlass) {
+                getPosMethod = Il2Cpp::GetMethodRecursively(transformKlass, "get_position", 0);
+            }
+        }
+        
+        if (!getPosMethod) return false;
+        
+        void* posObj = Il2Cpp::runtime_invoke(getPosMethod, boneTransform, nullptr, &exc);
+        if (!posObj || exc) return false;
+        
+        struct Vector3Args { float x, y, z; };
+        Vector3Args pos = *(Vector3Args*)((uintptr_t)posObj + 0x10);
+        
+        *outX = pos.x;
+        *outY = pos.y;
+        *outZ = pos.z;
+        
+        return true;
     }
 
 } // namespace GhostSystems

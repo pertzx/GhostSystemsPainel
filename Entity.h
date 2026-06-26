@@ -58,7 +58,7 @@ namespace GhostSystems {
         bool wallCheckEnabled = false;
         int wallCheckMethod = 0;
         bool teamCheckEnabled = true;
-        int teamCheckMethod = 6;
+        int teamCheckMethod = 13; // TeamColorStr Compare (0x7a0) - metodo baseado no dump.cs
         bool streamModeEnabled = false;
         bool threeFingerToggleEnabled = false;
     };

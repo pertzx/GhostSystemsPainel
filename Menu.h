@@ -56,6 +56,7 @@ namespace GhostSystems {
         void drawDebugPlayer();
         void drawESP();
         void drawIl2CppObject(void* obj, void* klass, const char* name, int depth, const std::string& path);
+        void drawEntityDebug(); // NOVO: Debug completo da EntityList
 
         GameState& sharedState;
         FeatureConfig& featureConfig;
@@ -81,6 +82,17 @@ namespace GhostSystems {
         size_t getCachedFieldOffset(void* obj, const char* fieldName);
         void* getCachedMethod(const char* className, const char* methodName, int paramCount = 0);
         void* getCachedClass(const char* assemblyName, const char* namespaceName, const char* className);
+        
+        // ===== DEBUG ENTITYLIST =====
+        bool showEntityDebug = true; // Mostrar aba de debug
+        int selectedDebugEntity = -1;
+        char entityFilter[64] = "";
+        bool showOnlyEnemies = false;
+        bool showOnlyAllies = false;
+        bool sortByDistance = true;
+        bool debugShowFullClassName = true;
+        bool debugShowParent = true;
+        bool debugShowComponents = true;
         
         // Flag de produção vs desenvolvimento
         bool isDebugMode = false; // Mude para false para esconder as abas de debug
@@ -134,6 +146,22 @@ namespace GhostSystems {
         float aimbotTargetRotX = 0.0f, aimbotTargetRotY = 0.0f, aimbotTargetRotZ = 0.0f, aimbotTargetRotW = 0.0f;
         float aimbotNewRotX = 0.0f, aimbotNewRotY = 0.0f, aimbotNewRotZ = 0.0f, aimbotNewRotW = 0.0f;
         std::string aimbotErrorLog = "Nenhum erro";
+        
+        // ===== NOVO: Raycast preciso (cabeca do local -> multiplos pontos do alvo) =====
+        bool wallCheckMultiplePoints = true; // Se true, testa cabeca, pescoco e peito do alvo
+        int wallCheckLocalOrigin = 1; // 0 = Pe, 1 = Peito, 2 = Cabeca
+        
+        // Cache de metodos de bones
+        void* getHeadTFMethod = nullptr;
+        void* getNeckTFMethod = nullptr;
+        void* getChestTFMethod = nullptr;
+        bool boneMethodsCached = false;
+        
+        // Obtem posicao do bone especifico do jogador local
+        bool getLocalPlayerBonePosition(int boneType, float* outX, float* outY, float* outZ);
+        
+        // Obtem posicao do bone especifico de uma entidade
+        bool getEntityBonePosition(void* entityObj, int boneType, float* outX, float* outY, float* outZ);
 
         // Variaveis de controle de tempo (Delay) do Aimbot
         float aimbotDelayTimer = 0.0f;
