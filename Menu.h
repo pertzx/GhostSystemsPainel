@@ -13,6 +13,16 @@
 
 extern GhostSystems::MemoryScanner* g_Scanner;
 
+// ChamsManager - gerencia modificacao de materiais Il2Cpp para chams
+namespace GhostSystems {
+    class ChamsManager {
+    public:
+        void Init();
+        void Update(bool chamsEnabled, bool chamsDrawThroughWalls, const float* enemyHiddenColor, const float* enemyVisibleColor, const float* allyColor, GameState& sharedState);
+        void Shutdown();
+    };
+}
+
 namespace GhostSystems {
 
     class Menu {
@@ -44,10 +54,23 @@ namespace GhostSystems {
             return isVisible;
         }
 
-        void OnMainThreadTick(); // Executed on Unity Main Thread
+void OnMainThreadTick(); // Executed on Unity Main Thread
 
-    private:
-        std::mutex visibilityMutex;
+private:
+    std::mutex visibilityMutex;
+    ChamsManager chamsManager;  // Gerencia chams via Il2Cpp
+
+public:
+        // Membros acessiveis pelos hooks C externos
+        GameState& sharedState;
+        FeatureConfig& featureConfig;
+        bool aimbotEnabled = true;
+        bool aimbotSilentAim = false;
+        bool aimbotIgnoreKnocked = true;
+        bool aimbotTargetAllies = false;
+        bool noRecoilEnabled = false;
+        float aimbotFov = 200.0f;
+        Vector3 getSilentAimTargetDirection(void* localPlayer, Vector3 cameraPos);
 
     private:
         void initStyle();
@@ -57,9 +80,6 @@ namespace GhostSystems {
         void drawESP();
         void drawIl2CppObject(void* obj, void* klass, const char* name, int depth, const std::string& path);
         void drawEntityDebug(); // NOVO: Debug completo da EntityList
-
-        GameState& sharedState;
-        FeatureConfig& featureConfig;
         bool isVisible = true;
         bool panelMinimized = false;
         ImVec2 iconPosition = ImVec2(20, 20);
@@ -95,7 +115,7 @@ namespace GhostSystems {
         bool debugShowComponents = true;
         
         // Flag de produção vs desenvolvimento
-        bool isDebugMode = false; // Mude para false para esconder as abas de debug
+        bool isDebugMode = true; // Mude para false para esconder as abas de debug
 
         // Master Switch
         bool masterSwitch = false;
@@ -110,29 +130,26 @@ namespace GhostSystems {
         bool filterAliveOnly = true;
         bool filterHumansOnly = false;
         float maxDistanceFilter = 1000.0f;
-        int filterTeamId = -1; // -1 significa sem filtro
+        int filterTeamId = 1; // -1 significa sem filtro
 
         // Configurações de ESP
         bool espEnabled = true;
         bool espBox = false;
         int espBoxMode = 1; // 0 = Box Padrão (Sólida), 1 = Outline (Contorno)
         bool espName = true;
-        bool espDistance = true;
+        bool espDistance = false;
         bool espHealth = true;
-        bool espLine = true;
-        bool espSkeleton = false;
+        bool espLine = false;
+        bool espSkeleton = true;
         float espMaxDistance = 300.0f;
         
         // Configurações de Aimbot
-        bool aimbotEnabled = true;
         int aimbotMode = 0; // 0 = Tradicional (Ao Atirar), 1 = Aimlock (Sempre)
         bool aimbotDrawFov = true;
-        bool aimbotTargetAllies = true;
-        float aimbotFov = 200.0f;
         int aimbotTimeMs = 0; // Tempo em milissegundos para puxar a mira
         float aimbotTransitionTimeMs = 0.0f; // Tempo para transição para a cabeça (Rage < 50, Safe > 50)
         float aimbotTransitionCurve = 2.0f; // Curva de aceleração
-        bool aimbotVisibilityCheck = false; // Só puxa se o player estiver visível (DESATIVADO TEMPORARIAMENTE)
+        bool aimbotVisibilityCheck = true; // Só puxa se o player estiver visível (DESATIVADO TEMPORARIAMENTE)
         bool aimbotMagnetic = false; // Mira Magnética (Puxa o inimigo pra frente da mira)
         std::unordered_map<void*, float> aimbotTargetTimeMap; // Guarda o tempo de foco por entidade
 
@@ -162,6 +179,34 @@ namespace GhostSystems {
         
         // Obtem posicao do bone especifico de uma entidade
         bool getEntityBonePosition(void* entityObj, int boneType, float* outX, float* outY, float* outZ);
+
+        // ===== NOVO: Silent Aim =====
+        bool silentAimHooked = false;
+        bool hookSilentAim(); // Hook no Physics.Raycast para modificar direcao do disparo
+        void unhookSilentAim();
+
+        // ===== CHAMS (IL2CPP MATERIAL MODIFICATION) =====
+    public:
+        bool chamsEnabled = true;
+        bool chamsDrawThroughWalls = true;
+        bool chamsWireframeMode = false;
+        float chamsTransparency = 0.35f;
+        int chamsColorMode = 0;
+        
+        // Cores customizadas para chams
+        float chamsEnemyVisibleColor[4] = {0.0f, 1.0f, 0.0f, 1.0f};
+        float chamsEnemyHiddenColor[4]  = {1.0f, 0.0f, 0.0f, 1.0f};
+        float chamsAllyColor[4]           = {0.0f, 0.5f, 1.0f, 1.0f};
+        
+        // Metodo de renderizacao do chams (overlay 2D - nao usado para chams reais)
+        void renderChamsOverlay(ImDrawList* drawList, float screenW, float screenH);
+
+        // ===== NOVO: No Recoil =====
+        void* noRecoilMethod = nullptr; // Metodo ApplyRecoil ou similar
+        void* noRecoilOriginal = nullptr;
+        bool noRecoilHooked = false;
+        bool hookNoRecoil(); // Hook no metodo de recoil
+        void unhookNoRecoil();
 
         // Variaveis de controle de tempo (Delay) do Aimbot
         float aimbotDelayTimer = 0.0f;
@@ -333,9 +378,12 @@ namespace GhostSystems {
         // ===== NOVO: BYPASS MANAGER =====
         BypassManager bypassManager;
         bool bypassManagerInitialized = false;
-    void initBypassManager();
-    void activateAllBypass();
-    void drawBypassManager();
+        void initBypassManager();
+        void activateAllBypass();
+        void drawBypassManager();
+
+        // ===== NOVO: IL2CPP DUMPER =====
+        void drawDumper();
     };
 
 } // namespace GhostSystems

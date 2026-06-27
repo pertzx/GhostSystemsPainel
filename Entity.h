@@ -17,6 +17,11 @@ namespace GhostSystems {
             return std::sqrt(dx*dx + dy*dy + dz*dz);
         }
     };
+    
+    // Usado para WorldToScreenPoint
+    struct Vector3Args {
+        float x, y, z;
+    };
 
     enum class Alignment {
         ALLY,
@@ -51,6 +56,7 @@ namespace GhostSystems {
         Vector3 localPlayerPos;
         int localPlayerTeamId;
         void* localPlayerObj = nullptr;
+        Vector3 cameraPos = {0, 0, 0};
     };
 
     struct FeatureConfig {
