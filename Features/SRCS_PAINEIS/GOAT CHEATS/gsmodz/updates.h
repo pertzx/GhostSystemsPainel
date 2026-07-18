@@ -1,0 +1,355 @@
+#pragma once
+
+static uintptr_t libBase;
+bool isGameLibLoaded = false;
+
+long AfindLibrary(const char *library) {
+    char filename[0xFF] = {0},
+    buffer[1024] = {0};
+    FILE *fp = NULL;
+    long address = 0;
+    sprintf(filename, OBFUSCATE("/proc/self/maps"));
+    fp = fopen(filename, OBFUSCATE("rt"));
+    if (fp == NULL) {
+        perror(OBFUSCATE("fopen"));
+        goto done;
+    }
+    while (fgets(buffer, sizeof(buffer), fp)) {
+        if (strstr(buffer, library)) {
+            address = (long) strtoul(buffer, NULL, 16);
+            goto done;
+        }
+    }
+    done:
+    if (fp) {
+        fclose(fp);
+    }
+    return address;
+}
+
+long AClibBase;
+long AgetAbsoluteAddress(const char* libraryName, long relativeAddr) {
+    if (AClibBase == 0) {
+        AClibBase = AfindLibrary(libraryName);
+        if (AClibBase == 0) {
+            AClibBase = 0;
+        }
+    }
+    return AClibBase + relativeAddr;
+}
+class Vvector3 {
+public:
+float X;
+float Y;
+float Z;
+Vvector3() : X(0), Y(0), Z(0) {}
+Vvector3(float x1, float y1, float z1) : X(x1), Y(y1), Z(z1) {}
+Vvector3(const Vvector3 &v);
+~Vvector3();
+};
+
+Vvector3::Vvector3(const Vvector3 &v) : X(v.X), Y(v.Y), Z(v.Z) {}
+Vvector3::~Vvector3() {}
+
+__attribute__((visibility("hidden")))
+uintptr_t string2Offset(const char* s) {
+    using conv_fn_t = unsigned long (*)(const char*, char**, int);
+    conv_fn_t conv_fn = reinterpret_cast<conv_fn_t>(dlsym(RTLD_DEFAULT, OBFUSCATE("strtoul")));
+    if constexpr (sizeof(uintptr_t) == sizeof(unsigned long)) {
+        return conv_fn(s, nullptr, 16);
+    } else {
+        using conv64_fn_t = unsigned long long (*)(const char*, char**, int);
+        auto conv64_fn = reinterpret_cast<conv64_fn_t>(dlsym(RTLD_DEFAULT, OBFUSCATE("strtoull")));
+        return conv64_fn(s, nullptr, 16);
+    }
+}
+
+uintptr_t basePtr12,basePtr13,basePtr14,basePtr15;
+
+__attribute__((visibility("hidden")))
+auto LocalizarInderecoBase(const char* lib)
+{
+    uintptr_t InderecoBase = 0;
+    char line[1024];
+    char filename[0xFF] = {0};
+    sprintf(filename,OBFUSCATE("/proc/self/maps"));
+    FILE* fp = fopen(filename, OBFUSCATE("re"));
+    if(fp) {
+        while(fgets(line, sizeof line, fp)) {
+            if(strstr(line, lib)) {
+                InderecoBase = std::stoul(line, nullptr, 16);
+                return InderecoBase;
+            }
+        }
+    }
+    return InderecoBase;
+}
+
+
+__attribute__((visibility("hidden")))
+void* getAddressIL2CPP(uintptr_t relativeAddr2, bool recheck2 = false)
+{
+    while(basePtr13 == 0)
+    {
+        basePtr13 = LocalizarInderecoBase(OBFUSCATE("libil2cpp.so"));
+        //LOGD(WRAPPER_MARCO("basePtr1: %p"), basePtr1);
+    }
+    if(recheck2)
+        basePtr13 = LocalizarInderecoBase(OBFUSCATE("libil2cpp.so"));
+    return (void*)(basePtr13 + relativeAddr2);
+}
+
+#define Class_Camera__get_main (uintptr_t) Il2CppGetMethodOffset(OBFUSCATE("UnityEngine.dll"), OBFUSCATE("UnityEngine"), OBFUSCATE("Camera"), OBFUSCATE("get_main"))
+void* get_main() {
+    return reinterpret_cast<void* (__fastcall*)()>(Class_Camera__get_main)();
+}
+
+#define Class_Input__get_touchCount (uintptr_t) Il2CppGetMethodOffset(OBFUSCATE("UnityEngine.dll"), OBFUSCATE("UnityEngine"), OBFUSCATE("Input"), OBFUSCATE("get_touchCount"))
+
+#define Class_Input__GetTouch (uintptr_t) Il2CppGetMethodOffset(OBFUSCATE("UnityEngine.dll"), OBFUSCATE("UnityEngine"), OBFUSCATE("Input"), OBFUSCATE("GetTouch"), 1)
+
+#define Class_Input__get_mousePosition (uintptr_t) Il2CppGetMethodOffset(OBFUSCATE("UnityEngine.dll"), OBFUSCATE("UnityEngine"), OBFUSCATE("Input"), OBFUSCATE("get_mousePosition"))
+
+#define Class_Screen__get_width (uintptr_t) Il2CppGetMethodOffset(OBFUSCATE("UnityEngine.dll"), OBFUSCATE("UnityEngine"), OBFUSCATE("Screen"), OBFUSCATE("get_width"))
+int get_width() {
+    return reinterpret_cast<int(__fastcall*)()>(Class_Screen__get_width)();
+}
+
+#define Class_Screen__get_height (uintptr_t) Il2CppGetMethodOffset(OBFUSCATE("UnityEngine.dll"), OBFUSCATE("UnityEngine"), OBFUSCATE("Screen"), OBFUSCATE("get_height"))
+int get_height() {
+    return reinterpret_cast<int(__fastcall*)()>(Class_Screen__get_height)();
+}
+
+#define Class_Screen__get_density (uintptr_t) Il2CppGetMethodOffset(OBFUSCATE("UnityEngine.dll"), OBFUSCATE("UnityEngine"), OBFUSCATE("Screen"), OBFUSCATE("get_dpi"))
+
+#define Camera_get_fieldOfView (uintptr_t) Il2CppGetMethodOffset(OBFUSCATE("UnityEngine.dll"), OBFUSCATE("UnityEngine"), OBFUSCATE("Camera"), OBFUSCATE("get_fieldOfView"))
+float get_fieldOfView() {
+    return reinterpret_cast<float(__fastcall*)(void*)>(Camera_get_fieldOfView)(get_main());
+}
+
+#define Camera_set_fieldOfView (uintptr_t) Il2CppGetMethodOffset(OBFUSCATE("UnityEngine.dll"), OBFUSCATE("UnityEngine"), OBFUSCATE("Camera"), OBFUSCATE("set_fieldOfView"), 1)
+void* set_fieldOfView(float value) {
+    return reinterpret_cast<void* (__fastcall*)(void*, float)>(Camera_set_fieldOfView)(get_main(), value);
+}
+
+#define ForWard (uintptr_t) Il2CppGetMethodOffset(OBFUSCATE("UnityEngine.dll"), OBFUSCATE("UnityEngine"), OBFUSCATE("Transform"), OBFUSCATE("get_forward"), 0)
+static Vector3 GetForward(void* player) {
+    Vector3(*_GetForward)(void* players) = (Vector3(*)(void*))(ForWard);
+    return _GetForward(player);
+}
+
+#define Class_Transform__GetPosition Il2CppGetMethodOffset(OBFUSCATE("UnityEngine.dll"), OBFUSCATE("UnityEngine"), OBFUSCATE("Transform"), OBFUSCATE("get_position_Injected"), 1)
+static Vector3 Transform_GetPosition(void* player) {
+    Vector3 out = Vector3::zero();
+    void (*_Transform_GetPosition)(void* transform, Vector3 * out) = (void (*)(void*, Vector3*))(Class_Transform__GetPosition);
+    _Transform_GetPosition(player, &out);
+    return out;
+}
+
+#define Class_Transform__SetPosition Il2CppGetMethodOffset(OBFUSCATE("UnityEngine.dll"), OBFUSCATE("UnityEngine"), OBFUSCATE("Transform"), OBFUSCATE("set_position_Injected"), 1)
+static void Transform_INTERNAL_SetPosition(void* player, Vvector3 inn) {
+    void (*Transform_INTERNAL_SetPosition)(void* transform, Vvector3 in) = (void (*)(void*, Vvector3))(Class_Transform__SetPosition);
+    Transform_INTERNAL_SetPosition(player, inn);
+}
+
+#define Class_Transform__Position Il2CppGetMethodOffset(OBFUSCATE("UnityEngine.dll"), OBFUSCATE("UnityEngine"), OBFUSCATE("Transform"), OBFUSCATE("get_position"), 0)
+Vector3 get_position(void* player) {
+    Vector3(*_get_position)(void* players) = (Vector3(*)(void*))(Class_Transform__Position);
+    return _get_position(player);
+}
+
+#define Class_Transform__Rotation Il2CppGetMethodOffset(OBFUSCATE("UnityEngine.dll"), OBFUSCATE("UnityEngine"), OBFUSCATE("Transform"), OBFUSCATE("get_rotation"), 0)
+static Quaternion GetRotation(void* player) {
+Quaternion (*_GetRotation)(void* players) = (Quaternion(*)(void *))(Class_Transform__Rotation);
+return _GetRotation(player);
+}
+
+#define Class_Camera__WorldToScreenPoint (uintptr_t) Il2CppGetMethodOffset(OBFUSCATE("UnityEngine.dll"), OBFUSCATE("UnityEngine"), OBFUSCATE("Camera"), OBFUSCATE("WorldToScreenPoint"), 1)
+static Vector3 WorldToScreenPoint(void* WorldCam, Vector3 WorldPos) {
+    Vector3(*_WorldToScreenScene)(void* Camera, Vector3 position) = (Vector3(*)(void*, Vector3)) (Class_Camera__WorldToScreenPoint);
+    return _WorldToScreenScene(WorldCam, WorldPos);
+}
+
+#define ListPlayer (uintptr_t) Il2CppGetFieldOffset(OBFUSCATE("Assembly-CSharp.dll"), OBFUSCATE("COW.GamePlay"), OBFUSCATE("Match"), OBFUSCATE("m_Players"))
+
+#define EnemyUpdate (uintptr_t) Il2CppGetMethodOffset(OBFUSCATE("Assembly-CSharp.dll"), OBFUSCATE("COW.GamePlay"), OBFUSCATE("Player"), OBFUSCATE("LateUpdate"), 0)
+
+#define MainCam (uintptr_t) Il2CppGetFieldOffset(OBFUSCATE("Assembly-CSharp.dll"), OBFUSCATE("COW.GamePlay"), OBFUSCATE("Player"), OBFUSCATE("MainCameraTransform"))
+static Vector3 CameraMain(void* player) {
+    return get_position(*(void**)((uint64_t)player + MainCam));
+}
+
+#define Match (uintptr_t) Il2CppGetMethodOffset(OBFUSCATE("Assembly-CSharp.dll"), OBFUSCATE("COW"), OBFUSCATE("GameFacade"), OBFUSCATE("CurrentMatch"), 0)
+static void* Curent_Match() {
+    void* (*_Curent_Match) (void* nuls) = (void* (*)(void*))(Match);
+    return _Curent_Match(NULL);
+}
+
+#define Local (uintptr_t) Il2CppGetMethodOffset(OBFUSCATE("Assembly-CSharp.dll"), OBFUSCATE("COW"), OBFUSCATE("UIHudDetectorController"), OBFUSCATE("GetLocalPlayer"), 0)
+static void* GetLocalPlayer(void* Game) {
+    void* (*_GetLocalPlayer)(void* match) = (void* (*)(void*))(Local);
+    return _GetLocalPlayer(Game);
+}
+
+#define Visible (uintptr_t) Il2CppGetMethodOffset(OBFUSCATE("Assembly-CSharp.dll"), OBFUSCATE("COW.GamePlay"), OBFUSCATE("Player"), OBFUSCATE("IsVisible"), 0)
+static bool get_isVisible(void* player) {
+    bool (*_get_isVisible)(void* players) = (bool (*)(void*))(Visible);
+    return _get_isVisible(player);
+}
+
+#define Team (uintptr_t) Il2CppGetMethodOffset(OBFUSCATE("Assembly-CSharp.dll"), OBFUSCATE("COW.GamePlay"), OBFUSCATE("Player"), OBFUSCATE("IsLocalTeammate"), 1)
+static bool get_isLocalTeam(void* player) {
+    using fnGetIsLocalTeam = bool(*)(void*, bool);
+    auto _get_isLocalTeam = reinterpret_cast<fnGetIsLocalTeam>(Team);
+    return _get_isLocalTeam(player, false);
+}
+
+#define Die (uintptr_t) Il2CppGetMethodOffset(OBFUSCATE("Assembly-CSharp.dll"), OBFUSCATE("COW.GamePlay"), OBFUSCATE("Player"), OBFUSCATE("get_IsDieing"), 0)
+static bool get_IsDieing(void* player) {
+    bool (*_get_die)(void* players) = (bool (*)(void*))(Die);
+    return _get_die(player);
+}
+
+#define CurHP (uintptr_t) Il2CppGetMethodOffset(OBFUSCATE("Assembly-CSharp.dll"), OBFUSCATE("COW.GamePlay"), OBFUSCATE("Player"), OBFUSCATE("get_CurHP"), 0)
+static int GetHp(void* player) {
+    int (*_GetHp)(void* players) = (int(*)(void*))(CurHP);
+    return _GetHp(player);
+}
+
+#define MaxHP (uintptr_t) Il2CppGetMethodOffset(OBFUSCATE("Assembly-CSharp.dll"), OBFUSCATE("COW.GamePlay"), OBFUSCATE("Player"), OBFUSCATE("get_MaxHP"), 0)
+static int get_MaxHP(void* enemy) {
+    int (*_get_MaxHP)(void* player) = (int(*)(void*))(MaxHP);
+    return _get_MaxHP(enemy);
+}
+
+#define Name (uintptr_t) Il2CppGetMethodOffset(OBFUSCATE("Assembly-CSharp.dll"), OBFUSCATE("COW.GamePlay"), OBFUSCATE("Player"), OBFUSCATE("get_NickName"), 0)
+static monoString* get_NickName(void* player) {
+    monoString* (*_get_NickName)(void* players) = (monoString * (*)(void*))(Name);
+    return _get_NickName(player);
+}
+
+#define Aim (uintptr_t) Il2CppGetMethodOffset(OBFUSCATE("Assembly-CSharp.dll"), OBFUSCATE("COW.GamePlay"), OBFUSCATE("Player"), OBFUSCATE("SetAimRotation"), 2) //0
+static void set_aim(void* player, Quaternion look) {
+    using fnSetAim = void(*)(void*, Quaternion, bool);
+    auto _set_aim = reinterpret_cast<fnSetAim>(Aim);
+
+    _set_aim(player, look, false);
+}
+
+#define Scope (uintptr_t) Il2CppGetMethodOffset(OBFUSCATE("Assembly-CSharp.dll"), OBFUSCATE("COW.GamePlay"), OBFUSCATE("Player"), OBFUSCATE("get_IsSighting"),0 )
+static bool get_IsSighting(void* player) {
+    bool (*_get_IsSighting)(void* players) = (bool (*)(void*))(Scope);
+    return _get_IsSighting(player);
+}
+
+#define Fire (uintptr_t) Il2CppGetMethodOffset(OBFUSCATE("Assembly-CSharp.dll"), OBFUSCATE("COW.GamePlay"), OBFUSCATE("Player"), OBFUSCATE("IsFiring"), 0)
+static bool get_IsFiring(void* player) {
+    bool (*_get_IsFiring)(void* players) = (bool (*)(void*))(Fire);
+    return _get_IsFiring(player);
+}
+
+#define Head (uintptr_t) Il2CppGetMethodOffset(OBFUSCATE("Assembly-CSharp.dll"), OBFUSCATE("COW.GamePlay"), OBFUSCATE("Player"), OBFUSCATE("GetHeadTF"), 0)
+static void* GetHeadPositions(void* player) {
+    void* (*_GetHeadPositions)(void* players) = (void* (*)(void*))(Head);
+    return _GetHeadPositions(player);
+}
+
+#define CharGet (uintptr_t) Il2CppGetMethodOffset(OBFUSCATE("mscorlib.dll"), OBFUSCATE("System"), OBFUSCATE("String"), OBFUSCATE("get_Chars"), 1) //0
+char get_Chars(monoString* str, int index) {
+    char (*_get_Chars)(monoString * str, int index) = (char (*)(monoString*, int))(CharGet);
+    return _get_Chars(str, index);
+}
+
+#define Raycast (uintptr_t) Il2CppGetMethodOffset(OBFUSCATE("Assembly-CSharp.dll"), OBFUSCATE("COW.GamePlay"), OBFUSCATE("PhysicsUtil"), OBFUSCATE("SingleLineCheck"), 4) //3
+static bool Physics_Raycast(Vector3 camLocation, Vector3 headLocation, unsigned int LayerID, void* collider) {
+    bool (*_Physics_Raycast)(Vector3 camLocation, Vector3 headLocation, unsigned int LayerID, void* collider) = (bool(*)(Vector3, Vector3, unsigned int, void*))(Raycast);
+    return _Physics_Raycast(camLocation, headLocation, LayerID, collider);
+}
+
+#define HeadColider (uintptr_t) Il2CppGetMethodOffset(OBFUSCATE("Assembly-CSharp.dll"), OBFUSCATE("COW.GamePlay"), OBFUSCATE("Player"), OBFUSCATE("get_HeadCollider"), 0)
+static void* Player_GetHeadCollider(void* player) {
+    void* (*_Player_GetHeadCollider)(void* players) = (void* (*)(void*))(HeadColider);
+    return _Player_GetHeadCollider(player);
+}
+
+#define Hip (uintptr_t) Il2CppGetMethodOffset(OBFUSCATE("Assembly-CSharp.dll"), OBFUSCATE("COW.GamePlay"), OBFUSCATE("Player"), OBFUSCATE("GetHipTF"), 0)
+static void* GetHipPositions(void* player) {
+void* (*_GetHipPositions)(void* players) = (void*(*)(void*))(Hip);
+return _GetHipPositions(player);
+}
+
+#define Class_Compent__Transform Il2CppGetMethodOffset(OBFUSCATE("UnityEngine.dll"), OBFUSCATE("UnityEngine"), OBFUSCATE("Component"), OBFUSCATE("get_transform"), 0)
+static void *Component_GetTransform(void *player) {
+void *(*_Component_GetTransform)(void *component) = (void *(*)(void *))(Class_Compent__Transform);
+return _Component_GetTransform(player);
+}
+
+
+static void *Camera_main() {
+void *(*_Camera_main)(void *nuls) = (void *(*)(void *))(Class_Camera__get_main);
+return _Camera_main(nullptr);
+}
+
+Vector3 getPosition(void *transform) {
+return get_position(Component_GetTransform(transform));
+}
+static Vector3 GetHeadPosition(void* player) {
+return get_position(GetHeadPositions(player));
+}
+static Vector3 GetHipPosition(void* player) {
+return get_position(GetHipPositions(player));
+}
+
+float get_density() {
+return reinterpret_cast<float(__fastcall *)()>(Class_Screen__get_density)();
+}
+
+
+
+
+//AIMKILL
+
+#define offset_DamageS2c (uintptr_t) Il2CppGetMethodOffset(OBFUSCATE("Assembly-CSharp.dll"), OBFUSCATE("COW.GamePlay"), OBFUSCATE("PhyXShield "), OBFUSCATE(".ctor"), 0)
+
+#define offset_TakeDamage (uintptr_t) Il2CppGetMethodOffset(OBFUSCATE("Assembly-CSharp.dll"), OBFUSCATE("COW.GamePlay"), OBFUSCATE("PlayerNetwork"), OBFUSCATE("TakeDamage"), 9)
+#define offset_PNGAJBCPDNJ (uintptr_t) Il2CppGetMethodOffset(OBFUSCATE("Assembly-CSharp.dll"), OBFUSCATE("COW.GamePlay"), OBFUSCATE("PhyXShield"), OBFUSCATE("CreateDamageReq"), 0)
+#define offset_get_gameObject (uintptr_t) Il2CppGetMethodOffset(OBFUSCATE("UnityEngine.CoreModule.dll"), OBFUSCATE("UnityEngine"), OBFUSCATE("Component"), OBFUSCATE("get_gameObject"), 0)
+#define offset_SendFunction (uintptr_t) Il2CppGetMethodOffset(OBFUSCATE("Assembly-CSharp.dll"), OBFUSCATE("COW"), OBFUSCATE("GameFacade"), OBFUSCATE("Send"), 4)
+#define offset_CFFPIACECIG (uintptr_t) Il2CppGetMethodOffset(OBFUSCATE("Assembly-CSharp.dll"), OBFUSCATE("COW.GamePlay"), OBFUSCATE("PlayerID"), OBFUSCATE("op_Implicit"), 1)
+
+
+#define offset_get_realtimeSinceStartup (uintptr_t) Il2CppGetMethodOffset(OBFUSCATE("UnityEngine.CoreModule.dll"), OBFUSCATE("UnityEngine"), OBFUSCATE("Time"), OBFUSCATE("get_realtimeSinceStartup"), 0)
+
+
+
+#define offset_DPPPFBHIHJA (uintptr_t) Il2CppGetMethodOffset(OBFUSCATE("Assembly-CSharp.dll"), OBFUSCATE("ffano"), OBFUSCATE("FNFOLKEMMBG"), OBFUSCATE("DPPPFBHIHJA"), 0)
+#define offset_SimulationTimer (uintptr_t) Il2CppGetMethodOffset(OBFUSCATE("Assembly-CSharp.dll"), OBFUSCATE("COW"), OBFUSCATE("GameFacade"), OBFUSCATE("CurrentGameSimulationTimer"), 0)
+#define offset_GKHECDLGAJA (uintptr_t) Il2CppGetMethodOffset(OBFUSCATE("Assembly-CSharp.dll"), OBFUSCATE("COW.GamePlay"), OBFUSCATE("Player"), OBFUSCATE("GetAimingAttackableEntity"), 1)
+#define offset_LCLHHHKFCFP (uintptr_t) Il2CppGetMethodOffset(OBFUSCATE("Assembly-CSharp.dll"), OBFUSCATE("COW.GamePlay"), OBFUSCATE("Weapon"), OBFUSCATE("GenerateCheckParams"), 4)
+#define offset_JDGGIFMKIKF (uintptr_t) Il2CppGetMethodOffset(OBFUSCATE("Assembly-CSharp.dll"), OBFUSCATE("COW.GamePlay"), OBFUSCATE("Weapon"), OBFUSCATE("get_Range"), 0)
+#define offset_SwapWeapon (uintptr_t) Il2CppGetMethodOffset(OBFUSCATE("Assembly-CSharp.dll"), OBFUSCATE("COW.GamePlay"), OBFUSCATE("PlayerNetwork"), OBFUSCATE("SwapWeapon"), 2)
+#define offset_GetWeaponOnHand (uintptr_t) Il2CppGetMethodOffset(OBFUSCATE("Assembly-CSharp.dll"), OBFUSCATE("COW.GamePlay"), OBFUSCATE("Player"), OBFUSCATE("GetWeaponOnHand"), 0)
+#define offset_StartWholeBodyFiring (uintptr_t) Il2CppGetMethodOffset(OBFUSCATE("Assembly-CSharp.dll"), OBFUSCATE("COW.GamePlay"), OBFUSCATE("PlayerNetwork"), OBFUSCATE("StartWholeBodyFiring"), 1)
+
+#define offset_StartFiring (uintptr_t) Il2CppGetMethodOffset(OBFUSCATE("Assembly-CSharp.dll"), OBFUSCATE("COW.GamePlay"), OBFUSCATE("PlayerNetwork"), OBFUSCATE("StartFiring"), 1)
+#define offset_StopFire (uintptr_t) Il2CppGetMethodOffset(OBFUSCATE("Assembly-CSharp.dll"), OBFUSCATE("COW.GamePlay"), OBFUSCATE("PlayerNetwork"), OBFUSCATE("StopFire"), 1)
+#define offset_GetPlayerID (uintptr_t) Il2CppGetMethodOffset(OBFUSCATE("Assembly-CSharp.dll"), OBFUSCATE("COW.GamePlay"), OBFUSCATE("Player"), OBFUSCATE("get_PlayerID"), 0)
+
+
+
+
+#define offset_GetWeaponID (uintptr_t) Il2CppGetMethodOffset(OBFUSCATE("Assembly-CSharp.dll"), OBFUSCATE("COW.GamePlay"), OBFUSCATE("ItemBase"), OBFUSCATE("GetItemDataID"), 0)
+#define offset_SetStartDamage (uintptr_t) Il2CppGetMethodOffset(OBFUSCATE("Assembly-CSharp.dll"), OBFUSCATE("COW.GamePlay"), OBFUSCATE("Weapon"), OBFUSCATE("OnCalcDamageOrHealing"), 1)
+
+#define offset_SetStartDamage (uintptr_t) IL2Cpp::Il2CppGetMethodOffset(OBFUSCATE("Assembly-CSharp.dll"), OBFUSCATE("COW.GamePlay"), OBFUSCATE("Weapon"), OBFUSCATE("OnCalcDamageOrHealing"), 1)
+
+
+#define offset_KFMGKCJMCAM (uintptr_t) Il2CppGetFieldOffset(OBFUSCATE("Assembly-CSharp.dll"), OBFUSCATE("COW.GamePlay"), OBFUSCATE("Player"), OBFUSCATE("m_PlayerID"))
+#define offset_GEGFCFDGGGP (uintptr_t) Il2CppGetFieldOffset(OBFUSCATE("Assembly-CSharp.dll"), OBFUSCATE("COW.GamePlay"), OBFUSCATE("Player"), OBFUSCATE("m_LastAimingInfoFromWeapon"))
+#define offset_EEJLKDDDJJD (uintptr_t) Il2CppGetFieldOffset(OBFUSCATE("Assembly-CSharp.dll"), OBFUSCATE("COW.GamePlay"), OBFUSCATE("Weapon"), OBFUSCATE("m_FireDuration"))
+#define offset_BaseDamage (uintptr_t) Il2CppGetFieldOffset(OBFUSCATE("Assembly-CSharp.dll"), OBFUSCATE("COW.GamePlay"), OBFUSCATE("Weapon"), OBFUSCATE("m_WeaponParams"))
+#define offset_BodyPart (uintptr_t) Il2CppGetFieldOffset(OBFUSCATE("Assembly-CSharp.dll"), OBFUSCATE("COW.GamePlay"), OBFUSCATE("DamageInfo"), OBFUSCATE("HitColliderType"))
+#define offset_JMKMBNIBFNA (uintptr_t) Il2CppGetFieldOffset(OBFUSCATE("Assembly-CSharp.dll"), OBFUSCATE("COW.GamePlay"), OBFUSCATE("HitObjectInfo"), OBFUSCATE("HitObject"))
+#define offset_GHACJPMCEDK (uintptr_t) Il2CppGetFieldOffset(OBFUSCATE("Assembly-CSharp.dll"), OBFUSCATE("COW.GamePlay"), OBFUSCATE("HitObjectInfo"), OBFUSCATE(" HitCollider"))
+#define offset_OJKBBAOPPIN (uintptr_t) Il2CppGetFieldOffset(OBFUSCATE("Assembly-CSharp.dll"), OBFUSCATE("COW.GamePlay"), OBFUSCATE("HitObjectInfo"), OBFUSCATE("HitGroup"))
+#define offset_isGod (uintptr_t) Il2CppGetMethodOffset(OBFUSCATE("Assembly-CSharp.dll"), OBFUSCATE("COW.GamePlay"), OBFUSCATE("Player"), OBFUSCATE("get_IsGod"), 0)

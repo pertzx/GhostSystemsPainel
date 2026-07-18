@@ -1,0 +1,108 @@
+#include <esp.h>
+#include <layout.h>
+#include <imports.h>
+#include <jni.h>
+#include "../KittyMemory/MemoryPatch.hpp"
+#include "../KittyMemory/MemoryPatch.hpp"
+#include <telaonline.h>
+class _BYTE; class _QWORD;
+class _DWORD; class _WORD;
+#define _QWORD long 
+#define _DWORD long
+#define _BYTE long 
+#define _WORD long
+#include <EGL/egl.h>
+
+EGLBoolean(*old_eglSwapBuffers)(EGLDisplay dpy, EGLSurface surface);
+EGLBoolean hook_eglSwapBuffers(EGLDisplay dpy, EGLSurface surface) {
+	eglQuerySurface(dpy, surface, EGL_WIDTH, &egl.width);
+	eglQuerySurface(dpy, surface, EGL_HEIGHT, &egl.height);
+	if (!egl.setup) {
+		ImGui::CreateContext();
+		SetupImgui(); InitTexture();
+		egl.setup = true;
+	}
+	ImGuiIO& io = ImGui::GetIO(); ImGui_ImplOpenGL3_NewFrame();
+	ImGui_ImplAndroid_NewFrame(egl.width, egl.height);
+	ImGui::NewFrame();
+	int touchCount = (((int (*)())(Il2CppGetMethodOffset(OBFUSCATE("UnityEngine.dll"), OBFUSCATE("UnityEngine"), OBFUSCATE("Input"), OBFUSCATE("get_touchCount"))))());
+	if (touchCount > 0) {
+		UnityEngine_Touch_Fields touch = ((UnityEngine_Touch_Fields(*)(int))(Il2CppGetMethodOffset(OBFUSCATE("UnityEngine.dll"), OBFUSCATE("UnityEngine"), OBFUSCATE("Input"), OBFUSCATE("GetTouch"), 1)))(0);
+		float reverseY = io.DisplaySize.y - touch.m_Position.fields.y;
+		switch (touch.m_Phase) {
+		case TouchPhase::Began:
+		case TouchPhase::Stationary:
+			io.MousePos = ImVec2(touch.m_Position.fields.x, reverseY);
+			io.MouseDown[0] = true;
+			break;
+		case TouchPhase::Ended:
+		case TouchPhase::Canceled:
+			io.MouseDown[0] = false;
+			clearMousePos = true;
+		break; case TouchPhase::Moved:
+			io.MousePos = ImVec2(touch.m_Position.fields.x, reverseY);
+		break; default:break;
+		}
+	}
+	
+    ShowLogin2();
+	ImGui::EndFrame(); ImGui::Render(); 
+	glViewport(0, 0, io.DisplaySize.x, io.DisplaySize.y);
+	ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
+	return old_eglSwapBuffers(dpy, surface);
+}
+
+
+
+void *FreeFire(const char *) {
+
+
+sleep(7);
+void* libEGL = dlopen(OBFUSCATE("libEGL.so"), RTLD_NOW | RTLD_GLOBAL);
+if (!libEGL) {return nullptr;}
+A64HookFunction((void *) dlsym(dlopen(OBFUSCATE("libEGL.so"), 4), OBFUSCATE("eglSwapBuffers")), (void *) hook_eglSwapBuffers, (void **) &old_eglSwapBuffers);Il2CppAttach();
+A64HookFunction(Il2CppGetMethodOffset(OBFUSCATE("Assembly-CSharp.dll"), OBFUSCATE("COW.GamePlay"), OBFUSCATE("Player"), OBFUSCATE("UpdateBehavior"), 2), (void *) _LateUpdate, (void **) &LateUpdate);
+if (mlovinit()){
+//setShader(OBFUSCATE("_AlphaMask"));
+//LogShaders(); Wallhack();
+}
+}
+
+
+void *pLibRealUnity = 0;
+typedef jint(JNICALL *CallJNI_OnLoad_t)(JavaVM *vm, void *reserved);
+typedef void(JNICALL *CallJNI_OnUnload_t)(JavaVM *vm, void *reserved);
+CallJNI_OnLoad_t RealJNIOnLoad = 0; CallJNI_OnUnload_t RealJNIOnUnload = 0;
+JNIEXPORT jint JNICALL CallJNIOL(
+JavaVM *vm, void *reserved) {
+if (!pLibRealUnity)
+pLibRealUnity = dlopen(OBFUSCATE("libmainn.so"), RTLD_NOW);
+if (!RealJNIOnLoad)
+RealJNIOnLoad = reinterpret_cast<CallJNI_OnLoad_t>(dlsym(pLibRealUnity, OBFUSCATE("JNI_OnLoad")));
+return RealJNIOnLoad(vm, reserved);
+}
+JNIEXPORT void JNICALL CallJNIUL(
+JavaVM *vm, void *reserved) {
+if (!pLibRealUnity)
+pLibRealUnity = dlopen(OBFUSCATE("libmainn.so"), RTLD_NOW);
+if (!RealJNIOnUnload)
+RealJNIOnUnload = reinterpret_cast<CallJNI_OnUnload_t>(dlsym(pLibRealUnity, OBFUSCATE("JNI_OnUnload")));
+RealJNIOnUnload(vm, reserved);
+}
+
+JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM *vm, void *reserved) {
+jvm = vm;
+return JNI_VERSION_1_6;
+}
+
+JNIEXPORT void JNICALL JNI_OnUnload(JavaVM *vm, void *reserved) {
+CallJNIUL(vm, reserved);
+}
+
+__attribute__((constructor))
+void lib_main() {
+std::thread(FreeFire, nullptr).detach();
+}
+
+
+
