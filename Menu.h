@@ -11,6 +11,18 @@
 #include <regex>
 #include <cstdlib>
 
+#include "Features/SilentAim.h"
+#include "Features/AimLock.h"
+#include "SkeletonBoneOffsets.h"
+#include "Features/AimMagnet.h"
+#include "Features/Magnet.h"
+#include "Features/GhostHack.h"
+#include "Features/EnemyPull.h"
+#include "Features/NoRecoil.h"
+#include "Features/NikuHooks.h"
+#include "Features/UpDown.h"
+#include "Features/Teleport.h"
+#include "BypassLoginSDK.h"
 extern GhostSystems::MemoryScanner* g_Scanner;
 
 // ChamsManager - gerencia modificacao de materiais Il2Cpp para chams
@@ -28,7 +40,9 @@ namespace GhostSystems {
     class Menu {
     public:
         Menu(GameState& state, FeatureConfig& config) : sharedState(state), featureConfig(config) {
-            initStyle();
+            g_GameState = &state;
+initStyle();
+            InitExtras();
         }
 
         ~Menu() {
@@ -54,7 +68,9 @@ namespace GhostSystems {
             return isVisible;
         }
 
-void OnMainThreadTick(); // Executed on Unity Main Thread
+void MainThreadUpdate(); // Executed on Unity Main Thread
+        void OnMainThreadTick(); // Executed on Unity Main Thread (internal)
+        void UpdateMainThreadFeatures();
 
 private:
     std::mutex visibilityMutex;
@@ -69,11 +85,27 @@ public:
         bool aimbotIgnoreKnocked = true;
         bool aimbotTargetAllies = false;
         bool noRecoilEnabled = false;
+        // ---------- NEW FEATURES INSTANCES ----------
+        // Instances of each cheat feature (singletons)
+        SilentAimFeature      silentAimFeature;
+        AimLockFeature        aimLockFeature;
+        AimMagnetFeature      aimMagnetFeature;
+        MagnetFeature         magnetFeature;
+        GhostHackFeature      ghostHackFeature;
+        EnemyPullFeature      enemyPullFeature;
+        NoRecoilFeature       noRecoilFeature;
+        NikuHooksFeature      nikuHooksFeature;
+        UpDownFeature         upDownFeature;
+        TeleportFeature       teleportFeature;
+
         float aimbotFov = 200.0f;
         Vector3 getSilentAimTargetDirection(void* localPlayer, Vector3 cameraPos);
 
     private:
         void initStyle();
+        // Initialize extra features (hooks, threads) and UI bindings
+        void InitExtras();
+        void UpdateExtras();
         void drawEntityList();
         void drawFilters();
         void drawDebugPlayer();
@@ -151,6 +183,22 @@ public:
         float aimbotTransitionCurve = 2.0f; // Curva de aceleração
         bool aimbotVisibilityCheck = true; // Só puxa se o player estiver visível (DESATIVADO TEMPORARIAMENTE)
         bool aimbotMagnetic = false; // Mira Magnética (Puxa o inimigo pra frente da mira)
+        // UI flags for extra features
+        bool uiSilentAim = false;
+        bool uiAimLock = false;
+        bool uiAimMagnet = false;
+        bool uiMagnet = false;
+        bool uiGhostHack = false;
+        bool uiEnemyPull = false;
+        bool uiSpeedRun = false;
+        bool uiGoldBody = false;
+        bool uiDoubleGun = false;
+        bool uiFreeMove = false;
+        bool uiMediRun = false;
+        bool uiNoRecoil = false;
+        bool uiMovementShoot = false;
+        bool uiUpPlayer = false;
+        bool uiDownPlayer = false;
         std::unordered_map<void*, float> aimbotTargetTimeMap; // Guarda o tempo de foco por entidade
 
         // Variaveis de Debug Aimbot
@@ -180,10 +228,13 @@ public:
         // Obtem posicao do bone especifico de uma entidade
         bool getEntityBonePosition(void* entityObj, int boneType, float* outX, float* outY, float* outZ);
 
-        // ===== NOVO: Silent Aim =====
-        bool silentAimHooked = false;
-        bool hookSilentAim(); // Hook no Physics.Raycast para modificar direcao do disparo
-        void unhookSilentAim();
+// ===== NOVO: Silent Aim =====
+ bool silentAimHooked = false;
+ bool hookSilentAim(); // Hook no Physics.Raycast para modificar direcao do disparo (chame apenas no Unity Main Thread)
+ void unhookSilentAim(); // Unhook do SilentAim (chame apenas no Unity Main Thread)
+ public:
+ void UpdateSilentAimHook(); // Atualiza o estado do hook SilentAim (chame no Unity Main Thread)
+ void UpdateSilentAimCache(); // Atualiza cache para evitar runtime_invoke no hook (chame no Unity Main Thread)
 
         // ===== CHAMS (IL2CPP MATERIAL MODIFICATION) =====
     public:
@@ -198,8 +249,12 @@ public:
         float chamsEnemyHiddenColor[4]  = {1.0f, 0.0f, 0.0f, 1.0f};
         float chamsAllyColor[4]           = {0.0f, 0.5f, 1.0f, 1.0f};
         
-        // Metodo de renderizacao do chams (overlay 2D - nao usado para chams reais)
-        void renderChamsOverlay(ImDrawList* drawList, float screenW, float screenH);
+// Metodo de renderizacao do chams (overlay 2D - nao usado para chams reais)
+ void renderChamsOverlay(ImDrawList* drawList, float screenW, float screenH);
+ bool chamsGlHookInitialized = false;
+ bool chamsUseGlHook = false;
+ void initChamsGlHook();
+ void removeChamsGlHook();
 
         // ===== NOVO: No Recoil =====
         void* noRecoilMethod = nullptr; // Metodo ApplyRecoil ou similar
@@ -229,6 +284,11 @@ public:
 
         // Bypass - Network Analysis
         bool bypassEnabled = false;
+        
+        // ===== NOVO: BYPASS LOGIN SDK =====
+        bool bypassSDKInitialized = false;
+        bool bypassSDKActive = false;
+        void initBypassSDK();
         char myPlayerId[32] = "";
         char myPlayerName[64] = "";
         bool bypassAutoDetectMyData = true;
@@ -336,6 +396,7 @@ public:
 
         void drawBypass();
         void drawBypassConfig();
+        void drawBypassSDK();
         void drawBypassStats();
         void drawBypassList();
         void drawBypassDetails();

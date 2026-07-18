@@ -56,6 +56,8 @@ namespace GhostSystems {
         Vector3 localPlayerPos;
         int localPlayerTeamId;
         void* localPlayerObj = nullptr;
+        void* closestEnemy = nullptr;
+        void* nearestEnemy = nullptr;
         Vector3 cameraPos = {0, 0, 0};
     };
 
@@ -68,5 +70,8 @@ namespace GhostSystems {
         bool streamModeEnabled = false;
         bool threeFingerToggleEnabled = false;
     };
+
+    // Global pointer to shared game state for features
+    inline GameState* g_GameState = nullptr;
 
 }

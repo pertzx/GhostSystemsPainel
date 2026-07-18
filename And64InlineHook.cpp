@@ -33,6 +33,7 @@
 #include <errno.h>
 #include <sys/mman.h>
 #include <android/log.h>
+#include <unistd.h>
 
 #if defined(__aarch64__)
 
@@ -110,7 +111,15 @@ public:
 #define __intval(p)                reinterpret_cast<intptr_t>(p)
 #define __uintval(p)               reinterpret_cast<uintptr_t>(p)
 #define __ptr(p)                   reinterpret_cast<void *>(p)
-#define __page_size                4096
+static inline uintptr_t __a64_pagesize() {
+    static uintptr_t ps = 0;
+    if (!ps) {
+        long v = sysconf(_SC_PAGESIZE);
+        ps = (v > 0) ? (uintptr_t)v : 4096u;
+    }
+    return ps;
+}
+#define __page_size                (__a64_pagesize())
 #define __page_align(n)            __align_up(static_cast<uintptr_t>(n), __page_size)
 #define __ptr_align(x)             __ptr(__align_down(reinterpret_cast<uintptr_t>(x), __page_size))
 #define __align_up(x, n)           (((x) + ((n) - 1)) & ~((n) - 1))
@@ -478,7 +487,7 @@ static void __fix_instructions(uint32_t *__restrict inp, int32_t count, uint32_t
 //-------------------------------------------------------------------------
 
 extern "C" {
-    static __attribute__((__aligned__(__page_size))) uint32_t __insns_pool[A64_MAX_BACKUPS][A64_MAX_INSTRUCTIONS * 10];
+    static __attribute__((__aligned__(65536))) uint32_t __insns_pool[A64_MAX_BACKUPS][A64_MAX_INSTRUCTIONS * 10];
 
     //-------------------------------------------------------------------------
 

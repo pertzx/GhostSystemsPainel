@@ -22,6 +22,9 @@
 #ifndef LOGE
 #define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, LOG_TAG, __VA_ARGS__)
 #endif
+#ifndef LOGW
+#define LOGW(...) __android_log_print(ANDROID_LOG_WARN, LOG_TAG, __VA_ARGS__)
+#endif
 
 namespace GhostSystems {
 
@@ -128,14 +131,26 @@ namespace GhostSystems {
 
         void readLoop() {
             // Tenta abrir repetidamente ate encontrar
+            int attempts = 0;
             while (isRunning && touchFd < 0) {
                 touchFd = findTouchDevice();
                 if (touchFd < 0) {
-                    std::this_thread::sleep_for(std::chrono::seconds(1));
+                    attempts++;
+                    if (attempts % 10 == 0) {
+                        LOGI("TouchReader: procurando device... (tentativa %d)", attempts);
+                    }
+                    std::this_thread::sleep_for(std::chrono::milliseconds(500));
                 }
             }
 
             if (!isRunning) return;
+
+            if (touchFd >= 0) {
+                LOGI("TouchReader: device encontrado, fd=%d, max_x=%d, max_y=%d", touchFd, max_x, max_y);
+            } else {
+                LOGW("TouchReader: nenhum touch device encontrado, touch desabilitado");
+                return;
+            }
 
             struct input_event ev;
             int x = 0, y = 0;

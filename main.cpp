@@ -12,15 +12,21 @@
 #include "And64InlineHook.hpp"
 #include "Il2CppHelper.h"
 #include <atomic>
+#include <thread>
+#include <chrono>
 
 // Forward declaration de g_Scanner (usado em Menu.h)
 extern GhostSystems::MemoryScanner* g_Scanner;
 
 #include "Menu.h"
+#include "NetworkProxy.h"
+#include "BypassLoginSDK.h"
+#include "ChamsGlHook.h"
 
 #define LOG_TAG "GhostSystems"
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO, LOG_TAG, __VA_ARGS__)
 #define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, LOG_TAG, __VA_ARGS__)
+#define LOGW(...) __android_log_print(ANDROID_LOG_WARN, LOG_TAG, __VA_ARGS__)
 
 using namespace GhostSystems;
 
@@ -44,7 +50,7 @@ get_deltaTime_t orig_get_deltaTime = nullptr;
 
 float hook_get_deltaTime(void* methodInfo) {
     if (GhostSystems::g_Menu) {
-        GhostSystems::g_Menu->OnMainThreadTick();
+        GhostSystems::g_Menu->MainThreadUpdate();
     }
     if (orig_get_deltaTime) {
         return orig_get_deltaTime(methodInfo);
@@ -130,21 +136,39 @@ void CacheInputMethods() {
 
 // O Hook principal de Renderizacao EGL para Android (OpenGL ES 2.0+)
 EGLBoolean hook_eglSwapBuffers(EGLDisplay dpy, EGLSurface surface) {
-    if (!g_ImGuiInitialized) {
+if (!g_ImGuiInitialized) {
         // Inicializacao do contexto ImGui
         IMGUI_CHECKVERSION();
         ImGui::CreateContext();
         ImGuiIO& io = ImGui::GetIO();
         io.ConfigFlags |= ImGuiConfigFlags_IsTouchScreen;
         io.DisplaySize = ImVec2(1920, 1080); // Atualizado dinamicamente abaixo
-        
+
         // Setup ImGui bindings para OpenGL 3
         ImGui_ImplOpenGL3_Init("#version 300 es");
 
         g_Menu = new Menu(g_State, g_FeatureConfig);
-
         g_ImGuiInitialized = true;
         LOGI("ImGui Context Initialized");
+
+        {
+            GhostSystems::LoginSDKConfig cfg;
+            cfg.enableBypass = true;
+            cfg.forceGuestLogin = true;
+            cfg.spoofDeviceID = true;
+            cfg.blockTelemetry = true;
+            cfg.logAllCalls = true;
+            if (!GhostSystems::BypassLoginSDK::Instance().Initialize(cfg)) {
+                LOGW("[Main] BypassLoginSDK::Initialize falhou");
+            } else {
+                LOGI("[Main] BypassLoginSDK inicializado");
+            }
+        }
+
+        if (g_Menu && g_Menu->chamsEnabled) {
+            g_Menu->initChamsGlHook();
+            LOGI("[Main] ChamsGlHook inicializado no primeiro frame EGL");
+        }
     }
 
     {
@@ -289,10 +313,11 @@ EGLBoolean hook_eglSwapBuffers(EGLDisplay dpy, EGLSurface surface) {
     ImGui_ImplOpenGL3_NewFrame();
     ImGui::NewFrame();
 
-    // Renderiza o painel principal
-    if (g_Menu) {
-        g_Menu->render();
-    }
+ // Atualiza hooks de Silent Aim e outras features do Unity Main Thread
+ if (g_Menu) {
+     g_Menu->UpdateSilentAimHook();
+     g_Menu->render();
+ }
 
     ImGui::Render();
     
@@ -308,20 +333,20 @@ EGLBoolean hook_eglSwapBuffers(EGLDisplay dpy, EGLSurface surface) {
 void* MainThread(void* arg) {
     LOGI("Library injected. Initializing GhostSystems Scanner.");
     
-    // Inicializa o leitor de touch independente do Unity
+    // Inicializa o leitor de touch independente do Unity (non-blocking)
     g_TouchReader = new TouchReader();
     g_TouchReader->start();
 
     // Inicializa Scanner de memoria (será ativado quando o painel for aberto)
     g_Scanner = new GhostSystems::MemoryScanner(g_State, g_FeatureConfig);
 
-    // Obtem endereco do EGL e faz o hook em runtime
+    // INSTALA HOOK DO EGL IMEDIATAMENTE (sem esperar Il2Cpp)
     void* libEgl = dlopen("libEGL.so", RTLD_NOW);
     if (libEgl) {
         void* swapBuffers = dlsym(libEgl, "eglSwapBuffers");
         if (swapBuffers) {
             A64HookFunction(swapBuffers, (void*)hook_eglSwapBuffers, (void**)&orig_eglSwapBuffers);
-            LOGI("Hook eglSwapBuffers applied successfully. Setup complete.");
+            LOGI("Hook eglSwapBuffers applied immediately. Waiting for first frame...");
         } else {
             LOGE("Failed to find eglSwapBuffers in libEGL.so");
         }

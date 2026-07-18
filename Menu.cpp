@@ -4,6 +4,7 @@
 #include "MemoryScanner.h"
 #include "And64InlineHook.hpp"
 #include "IL2CppDumper.h"
+#include "BypassLoginSDK.h"
 #include <imgui.h>
 #include <ctime>
 #include <algorithm>
@@ -379,6 +380,26 @@ extern Menu* g_Menu;
         }
     }
 
+    void GhostSystems::Menu::initBypassSDK() {
+        // Initializes bypass login SDK automatically by default
+        if (!bypassSDKInitialized) {
+            LOGI("Iniciando BypassLoginSDK (automatico)...");
+            LoginSDKConfig config;
+            config.enableBypass = true;
+            config.forceGuestLogin = true;
+            config.spoofDeviceID = true;
+            config.blockTelemetry = true;
+            config.logAllCalls = true;
+            if (BypassLoginSDK::Instance().Initialize(config)) {
+                bypassSDKActive = true;
+                LOGI("BypassLoginSDK iniciado com sucesso!");
+            } else {
+                LOGE("Falha ao iniciar BypassLoginSDK!");
+            }
+            bypassSDKInitialized = true;
+        }
+    }
+
     void GhostSystems::Menu::render() {
         if (!isVisible) return;
 
@@ -503,6 +524,8 @@ extern Menu* g_Menu;
             ImGui::Separator();
 
             if (masterSwitch) {
+                // Atualiza o estado das features extras de acordo com a UI
+                UpdateExtras();
                 if (ImGui::BeginTabBar("MenuTabs")) {
                     if (ImGui::BeginTabItem(OBFUSCATE("Aimbot"))) {
                         ImGui::Checkbox(OBFUSCATE("Ativar Aimbot"), &aimbotEnabled);
@@ -590,6 +613,55 @@ extern Menu* g_Menu;
                         ImGui::EndTabItem();
                     }
 
+                    // ----- Extras Tab (new funcionalidades) -----
+                    if (ImGui::BeginTabItem(OBFUSCATE("Extras"))) {
+                        // Combat
+                        if (ImGui::CollapsingHeader(OBFUSCATE("Combat"), ImGuiTreeNodeFlags_DefaultOpen)) {
+                            ImGui::Checkbox("Silent Aim", &uiSilentAim);
+                            ImGui::Checkbox("Aim Lock", &uiAimLock);
+                            ImGui::Checkbox("Aim Magnet", &uiAimMagnet);
+                            ImGui::Checkbox("Enemy Pull", &uiEnemyPull);
+                            ImGui::Checkbox("Magnet (Pull)", &uiMagnet);
+                            ImGui::Checkbox("Ghost Hack", &uiGhostHack);
+                            ImGui::Checkbox(OBFUSCATE("No Recoil (Sem Coice)"), &noRecoilEnabled);
+                        }
+                        // Movement
+                        if (ImGui::CollapsingHeader(OBFUSCATE("Movement"), ImGuiTreeNodeFlags_DefaultOpen)) {
+                            ImGui::Checkbox(OBFUSCATE("Speed Run"), &uiSpeedRun);
+                            ImGui::Checkbox(OBFUSCATE("Gold Body (God)"), &uiGoldBody);
+                            ImGui::Checkbox(OBFUSCATE("Double Gun"), &uiDoubleGun);
+                            ImGui::Checkbox(OBFUSCATE("Free Move"), &uiFreeMove);
+                            ImGui::Checkbox(OBFUSCATE("Medi Run"), &uiMediRun);
+                            ImGui::Separator();
+                            ImGui::Checkbox(OBFUSCATE("Movement Shoot"), &uiMovementShoot);
+                            ImGui::Checkbox(OBFUSCATE("Up Player (Fly)"), &uiUpPlayer);
+                            ImGui::Checkbox(OBFUSCATE("Down Player (Ground Clamp)"), &uiDownPlayer);
+                        }
+                        // Weapon Mods
+                        if (ImGui::CollapsingHeader(OBFUSCATE("Weapon Mods"), ImGuiTreeNodeFlags_DefaultOpen)) {
+                            ImGui::Checkbox(OBFUSCATE("No Recoil"), &uiNoRecoil);
+                        }
+                        // Teleport
+                        if (ImGui::CollapsingHeader(OBFUSCATE("Teleport"), ImGuiTreeNodeFlags_DefaultOpen)) {
+                            static int selectedLocation = 0;
+                            static bool locationsLoaded = false;
+                            static std::vector<NamedLocation> locations;
+                            if (!locationsLoaded) {
+                                locations = teleportFeature.LoadLocations();
+                                locationsLoaded = true;
+                            }
+                            std::vector<const char*> names;
+                            for (auto &p : locations) names.push_back(p.name.c_str());
+                            ImGui::Combo(OBFUSCATE("Destino"), &selectedLocation, names.data(), (int)names.size());
+                            if (ImGui::Button(OBFUSCATE("Teleportar"))) {
+                                if (selectedLocation >= 0 && selectedLocation < (int)locations.size()) {
+                                    teleportFeature.TeleportTo(locations[selectedLocation].pos);
+                                }
+                            }
+                        }
+                        ImGui::EndTabItem();
+                    }
+                    // Original Configuracoes tab
                     if (ImGui::BeginTabItem(OBFUSCATE("Configuracoes"))) {
                         ImGui::TextColored(ImVec4(1.0f, 1.0f, 0.0f, 1.0f), "%s", OBFUSCATE("Modo Stream / Ocultacao"));
                         ImGui::Separator();
@@ -697,7 +769,18 @@ extern Menu* g_Menu;
                     }
 
                     if (ImGui::BeginTabItem("Bypass")) {
-                        drawBypassManager();
+                        // Subtabs do Bypass
+                        if (ImGui::BeginTabBar("BypassMainTabs")) {
+                            if (ImGui::BeginTabItem("Bypass Manager")) {
+                                drawBypassManager();
+                                ImGui::EndTabItem();
+                            }
+                            if (ImGui::BeginTabItem("Bypass SDK")) {
+                                drawBypassSDK();
+                                ImGui::EndTabItem();
+                            }
+                        }
+                        ImGui::EndTabBar();
                         ImGui::EndTabItem();
                     }
                     if (ImGui::BeginTabItem("Dumper")) {
@@ -731,7 +814,67 @@ extern Menu* g_Menu;
         }
     }
 
-    void GhostSystems::Menu::drawBypassManager() {
+    void GhostSystems::Menu::drawBypassSDK() {
+    ImGui::TextColored(ImVec4(0.2f, 1.0f, 0.5f, 1.0f), "=== Bypass Login SDK (ffantihack) ===");
+    ImGui::Separator();
+
+    // Estado e controles
+        if (bypassSDKActive) {
+        ImGui::TextColored(ImVec4(0,1,0,1), "Status: ATIVO");
+    } else {
+        ImGui::TextColored(ImVec4(1,0,0,1), "Status: INATIVO");
+    }
+
+    if (ImGui::Button(bypassSDKActive ? "Desativar Bypass SDK" : "Ativar Bypass SDK")) {
+        bypassSDKActive = !bypassSDKActive;
+        BypassLoginSDK::Instance().UpdateConfig({bypassSDKActive, true, true, true, true});
+    }
+
+    ImGui::SameLine();
+    if (ImGui::Button("Reinicializar Bypass SDK")) {
+        bypassSDKInitialized = false;
+        initBypassSDK();
+    }
+
+    ImGui::Separator();
+    ImGui::Text("Hooks Ativos:");
+
+    // Lista de hooks com status
+    const auto& hooks = BypassLoginSDK::Instance().GetHookList();
+    if (ImGui::BeginTable("BypassSDKHooks", 3, ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg)) {
+        ImGui::TableSetupColumn("Hook", ImGuiTableColumnFlags_WidthFixed, 180.0f);
+        ImGui::TableSetupColumn("Status", ImGuiTableColumnFlags_WidthFixed, 80.0f);
+        ImGui::TableSetupColumn("Descrição", ImGuiTableColumnFlags_WidthStretch);
+        ImGui::TableHeadersRow();
+
+        for (const auto& hook : hooks) {
+            ImGui::TableNextRow();
+            ImGui::TableSetColumnIndex(0);
+            ImGui::Text("%s", hook.name.c_str());
+            ImGui::TableSetColumnIndex(1);
+            if (hook.isApplied) {
+                ImGui::TextColored(ImVec4(0,1,0,1), "ATIVO");
+            } else {
+                ImGui::TextColored(ImVec4(1,0,0,1), "OFF");
+            }
+            ImGui::TableSetColumnIndex(2);
+            ImGui::Text("%s", hook.description.c_str());
+        }
+        ImGui::EndTable();
+    }
+
+    if (hooks.empty()) {
+        ImGui::TextColored(ImVec4(1,1,0,1), "Nenhum hook aplicado ainda.");
+        if (ImGui::Button("Tentar Aplicar Hooks")) {
+            BypassLoginSDK::Instance().ApplyHooks();
+        }
+    }
+
+    ImGui::Separator();
+    ImGui::TextColored(ImVec4(0.5f, 0.8f, 1.0f, 1.0f), "Logs: adb logcat -s GhostSDK_Bypass:D");
+}
+
+void GhostSystems::Menu::drawBypassManager() {
         if (!bypassManagerInitialized) {
             initBypassManager();
         }
@@ -1219,10 +1362,12 @@ extern Menu* g_Menu;
                     }
                 }
             }
-            entity.isVisible = !hitObstacle;
+entity.isVisible = !hitObstacle;
         }
+    UpdateMainThreadFeatures();
     }
-    void GhostSystems::Menu::drawESP() {
+
+void GhostSystems::Menu::drawESP() {
         if (!masterSwitch) return; // Se o painel esta desativado, nao fazemos nada
 
         // ===== INICIALIZACAO DOS HOOKS (apenas uma vez) =====
@@ -1742,135 +1887,10 @@ extern Menu* g_Menu;
                         }
                     }
 
-                if (espSkeleton) {
-                    if (!entity.obj) {
-                          drawList->AddText(topLeft, IM_COL32(255, 0, 0, 255), "entity.obj == null");
-                      } else if (!getComponentMethod) {
-                          drawList->AddText(topLeft, IM_COL32(255, 0, 0, 255), "getComponentMethod == null");
-                      } else if (!animatorTypeObject) {
-                          drawList->AddText(topLeft, IM_COL32(255, 0, 0, 255), "animatorTypeObject == null");
-                      } else if (!getBoneTransformMethod) {
-                          drawList->AddText(topLeft, IM_COL32(255, 0, 0, 255), "getBoneTransformMethod == null");
-                      } else if (!getPosMethod) {
-                          drawList->AddText(topLeft, IM_COL32(255, 0, 0, 255), "getPosMethod == null");
-                      } else {
-                          CachedAnimatorInfo* info = &cachedAnimators[entity.obj];
-                        auto nowMsLocal = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
-                        if (!info->hasAttempted || (nowMsLocal - info->lastAttemptMs > 2000 && !info->animatorObj)) {
-                              void* exc = nullptr;
-                              bool includeInactive = true;
-                              void* args[2] = { animatorTypeObject, &includeInactive };
-                              uint32_t pCount = Il2Cpp::method_get_param_count(getComponentMethod);
-                              void* animObj = Il2Cpp::runtime_invoke(getComponentMethod, entity.obj, pCount == 2 ? args : &args[0], &exc);
-                              info->animatorObj = (!exc) ? animObj : nullptr;
-                              info->hasAttempted = true;
-                              info->lastAttemptMs = nowMsLocal;
-                          }
-                        
-                        if (!info->animatorObj) {
-                            drawList->AddText(topLeft, IM_COL32(255, 0, 0, 255), "animatorObj == null");
-                        } else {
-                            bool hasBone[30] = {false};
-                            ImVec2 boneScreen[30];
-                            
-                            // Lista de bones que precisamos para o esqueleto basico (HumanBodyBones do Unity)
-                            int requiredBones[] = { 0, 1, 2, 3, 4, 5, 6, 7, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18 };
-                        
-                            for (int i = 0; i < sizeof(requiredBones) / sizeof(int); ++i) {
-                                int bId = requiredBones[i];
-                                bool success = false;
-                                Vector3Args wPos = getBonePosCached(info, bId, success);
-                                if (success) {
-                                    void* args[1] = { &wPos };
-                                    void* exc2 = nullptr;
-                                    void* w2sObj = Il2Cpp::runtime_invoke(worldToScreenMethod, mainCamera, args, &exc2);
-                                    if (w2sObj && !exc2) {
-                                        Vector3Args sPos = *(Vector3Args*)((uintptr_t)w2sObj + 0x10);
-                                        if (sPos.z > 0) {
-                                            boneScreen[bId] = ImVec2(sPos.x, screenSize.y - sPos.y);
-                                            hasBone[bId] = true;
-                                        }   
-                                    }
-                                }
-                            }
-                            
-                            auto drawBoneLine = [&](int b1, int b2) {
-                                  if (hasBone[b1] && hasBone[b2]) {
-                                      drawList->AddLine(boneScreen[b1], boneScreen[b2], color, 1.5f);
-                                  }
-                              };
-                            
-                            // Desenha Esqueleto
-                            drawBoneLine(10, 9);  // Head -> Neck
-                            drawBoneLine(9, 7);   // Neck -> Spine
-                            drawBoneLine(7, 0);   // Spine -> Hips
-                            
-                            // Bracos (Esquerdo)
-                            drawBoneLine(9, 11);  // Neck -> LeftShoulder
-                            drawBoneLine(11, 13); // LeftShoulder -> LeftUpperArm
-                            drawBoneLine(13, 15); // LeftUpperArm -> LeftLowerArm
-                            drawBoneLine(15, 17); // LeftLowerArm -> LeftHand
-                            
-                            // Bracos (Direito)
-                            drawBoneLine(9, 12);  // Neck -> RightShoulder
-                            drawBoneLine(12, 14); // RightShoulder -> RightUpperArm
-                            drawBoneLine(14, 16); // RightUpperArm -> RightLowerArm
-                            drawBoneLine(16, 18); // RightLowerArm -> RightHand
-                            
-                            // Pernas (Esquerda)
-                            drawBoneLine(0, 1);   // Hips -> LeftUpperLeg
-                            drawBoneLine(1, 3);   // LeftUpperLeg -> LeftLowerLeg
-                            drawBoneLine(3, 5);   // LeftLowerLeg -> LeftFoot
-                            
-                            // Pernas (Direita)
-                              drawBoneLine(0, 2);   // Hips -> RightUpperLeg
-                              drawBoneLine(2, 4);   // RightUpperLeg -> RightLowerLeg
-                              drawBoneLine(4, 6);   // RightLowerLeg -> RightFoot
-
-                              bool anySuccess = false;
-                              for (int i = 0; i < 30; ++i) if (hasBone[i]) anySuccess = true;
-                              if (!anySuccess) {
-                                  // Debug text to understand why no bones are drawing
-                                  void* excDebug = nullptr;
-                                    int bIdDebug = 10; // Head
-                                    void* argsDebug[1] = { &bIdDebug };
-                                    void* boneTransformDebug = Il2Cpp::runtime_invoke(getBoneTransformMethod, info->animatorObj, argsDebug, &excDebug);
-                                    if (excDebug) {
-                                        std::string excMsg = "Exception";
-                                        void* exceptionKlass = Il2Cpp::object_get_class(excDebug);
-                                        if (exceptionKlass) {
-                                            void* getMessageMethod = Il2Cpp::GetMethodRecursively(exceptionKlass, "get_Message", 0);
-                                            if (getMessageMethod) {
-                                                void* strObj = Il2Cpp::runtime_invoke(getMessageMethod, excDebug, nullptr, nullptr);
-                                                if (strObj) {
-                                                    const char* strChars = (const char*)((uintptr_t)strObj + 0x14);
-                                                    int strLen = *(int*)((uintptr_t)strObj + 0x10);
-                                                    char cStr[128] = {0};
-                                                    for (int c = 0; c < strLen && c < 127; ++c) {
-                                                        cStr[c] = strChars[c * 2];
-                                                    }
-                                                    excMsg = std::string(cStr);
-                                                }
-                                            }
-                                        }
-                                        std::string drawStr = "GetBoneTransform throw: " + excMsg;
-                                        drawList->AddText(topLeft, IM_COL32(255, 165, 0, 255), drawStr.c_str());
-                                    } else if (!boneTransformDebug) {
-                                      drawList->AddText(topLeft, IM_COL32(255, 165, 0, 255), "boneTransform is null");
-                                  } else {
-                                      void* posObjDebug = Il2Cpp::runtime_invoke(getPosMethod, boneTransformDebug, nullptr, &excDebug);
-                                      if (excDebug) {
-                                          drawList->AddText(topLeft, IM_COL32(255, 165, 0, 255), "getPos threw exception");
-                                      } else if (!posObjDebug) {
-                                          drawList->AddText(topLeft, IM_COL32(255, 165, 0, 255), "posObj is null");
-                                      } else {
-                                          drawList->AddText(topLeft, IM_COL32(255, 165, 0, 255), "W2S or Z<0 failed");
-                                      }
-                                  }
-                              }
-                          }
-                      }
-                  } // Fim do espSkeleton
+                 if (espSkeleton) {
+                     std::vector<BonePos> bonePositions = GetAllNodePositions(entity.obj);
+                     DrawSkeleton(bonePositions, drawList, distance3D, screenSize.y, color);
+                 }
 
                 if (espLine) {
                     // Linha do topo da tela ate o jogador (DrawLine)
@@ -2223,51 +2243,8 @@ extern Menu* g_Menu;
             ImGui::EndTable();
         }
     }
-
-    void GhostSystems::Menu::drawBypass() {
-        if (ImGui::CollapsingHeader(OBFUSCATE("## Bypass Network Monitor"), ImGuiTreeNodeFlags_DefaultOpen)) {
-            bool wasEnabled = bypassEnabled;
-            ImGui::Checkbox(OBFUSCATE("Ativar Bypass"), &bypassEnabled);
-
-            if (bypassEnabled && !wasEnabled) {
-                hookUnityWebRequest();
-            } else if (!bypassEnabled && wasEnabled) {
-                unhookUnityWebRequest();
-            }
-
-            if (!bypassEnabled) {
-                ImGui::TextColored(ImVec4(0.5f, 0.5f, 0.5f, 1.0f), "Bypass desativado - Ative para capturar requisicoes");
-                return;
-            }
-
-            ImGui::Separator();
-            drawBypassStats();
-            ImGui::Separator();
-
-            if (ImGui::BeginTabBar("BypassTabs")) {
-                if (ImGui::BeginTabItem("Dashboard")) {
-                    drawBypassDashboard();
-                    ImGui::EndTabItem();
-                }
-                if (ImGui::BeginTabItem("Config")) {
-                    drawBypassConfig();
-                    ImGui::EndTabItem();
-                }
-                if (ImGui::BeginTabItem("Requests")) {
-                    drawBypassList();
-                    ImGui::EndTabItem();
-                }
-                if (ImGui::BeginTabItem("Details")) {
-                    drawBypassDetails();
-                    ImGui::EndTabItem();
-                }
-            }
-            ImGui::EndTabBar();
-        }
-    }
-
-    void GhostSystems::Menu::drawBypassConfig() {
-        ImGui::TextColored(ImVec4(0.0f, 1.0f, 1.0f, 1.0f), "=== Meus Dados ===");
+ void GhostSystems::Menu::drawBypassConfig() {
+ ImGui::TextColored(ImVec4(0.0f, 1.0f, 1.0f, 1.0f), "=== Meus Dados ===");
         ImGui::InputText("Player ID", myPlayerId, IM_ARRAYSIZE(myPlayerId));
         ImGui::InputText("Player Name", myPlayerName, IM_ARRAYSIZE(myPlayerName));
         ImGui::Checkbox(OBFUSCATE("Auto-Detectar Meus Dados"), &bypassAutoDetectMyData);
@@ -3251,7 +3228,7 @@ extern Menu* g_Menu;
         return method;
     }
 
-    void* Menu::getUnityWebRequestReceiveCallback() {
+    void* GhostSystems::Menu::getUnityWebRequestReceiveCallback() {
         void* unityWebRequestClass = Il2Cpp::GetClass("UnityEngine.UnityWebRequestModule.dll", "UnityEngine", "UnityWebRequest");
         if (!unityWebRequestClass) {
             unityWebRequestClass = Il2Cpp::GetClass("UnityEngine.UnityWebRequestModule", "UnityEngine", "UnityWebRequest");
@@ -3297,7 +3274,7 @@ extern Menu* g_Menu;
         return bypassUnityWebRequestHooked;
     }
 
-    thread_local Menu::HttpRequest Menu::t_CurrentCapturedRequest;
+    thread_local GhostSystems::Menu::HttpRequest GhostSystems::Menu::t_CurrentCapturedRequest;
 
     GhostSystems::Menu::HttpRequest& GhostSystems::Menu::getCurrentCapturedRequest() {
         return t_CurrentCapturedRequest;
@@ -3813,7 +3790,7 @@ extern Menu* g_Menu;
         }
         
         // Modifica a direcao para o alvo
-        Vector3 targetDir = g_MenuInstance->getSilentAimTargetDirection(localPlayerObjCached, {0,0,0});
+        GhostSystems::Vector3 targetDir = g_MenuInstance->getSilentAimTargetDirection(localPlayerObjCached, {0,0,0});
         if (targetDir.x != 0 || targetDir.y != 0 || targetDir.z != 0) {
             // Sobrescreve a direcao do ray
             struct V3 { float x, y, z; };
@@ -3852,7 +3829,7 @@ extern Menu* g_Menu;
         silentAimHooked = false;
     }
 
-    Vector3 GhostSystems::Menu::getSilentAimTargetDirection(void* localPlayer, Vector3 cameraPos) {
+    GhostSystems::Vector3 GhostSystems::Menu::getSilentAimTargetDirection(void* localPlayer, GhostSystems::Vector3 cameraPos) {
         std::vector<PlayerEntity> localEntities;
         {
             std::lock_guard<std::mutex> lock(sharedState.mtx);
@@ -3942,3 +3919,7 @@ extern Menu* g_Menu;
 } // namespace GhostSystems
 
 
+
+
+void GhostSystems::Menu::UpdateSilentAimHook() {}
+void GhostSystems::Menu::MainThreadUpdate() {}
